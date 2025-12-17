@@ -14,6 +14,20 @@ read_line(){
 
 require_root(){ if [ "$(id -u)" -ne 0 ]; then echo "请用 root 运行此脚本（sudo $0）" >&2; exit 1; fi; }
 
+ensure_grub_timeout_zero(){
+  local GRUB_FILE="/etc/default/grub"
+  [[ ! -f "$GRUB_FILE" ]] && { echo "[GRUB] 未找到 ${GRUB_FILE}，跳过。"; return 0; }
+  local cur
+  cur="$(grep -E '^[[:space:]]*GRUB_TIMEOUT=' "$GRUB_FILE" | tail -n1 | cut -d= -f2- | tr -d '"[:space:]')"
+  [[ "$cur" == "0" ]] && return 0
+  if grep -qE '^[[:space:]]*GRUB_TIMEOUT=' "$GRUB_FILE"; then
+    sed -i 's/^[[:space:]]*GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' "$GRUB_FILE"
+  else
+    echo "GRUB_TIMEOUT=0" >>"$GRUB_FILE"
+  fi
+  command -v update-grub >/dev/null 2>&1 && update-grub
+}
+
 install_base_limits(){
   mkdir -p /etc/security/limits.d
   cat >/etc/security/limits.d/99-limits.conf <<EOF
@@ -536,13 +550,14 @@ main_menu(){
     echo " 3) VPS 虚拟机优化"
     echo " 0) 退出"
     echo
-    read_line "请选择 [0-3]: " ""; choice="$REPLY"
+    read -r -e -p "请选择 [0-3]: " choice || true
+    choice="${choice//[[:space:]]/}"
     case "${choice:-}" in
-      1) clear_screen; echo "[操作] 本地 MOSDNS 虚拟机优化 ..."; install_base_limits; install_mosdns_sysctl; install_nic_tuning_service "tso off gso off gro off rx-gro-hw off lro off"; ask_reboot; break ;;
-      2) clear_screen; echo "[操作] 本地 SINGBOX 虚拟机优化 ..."; install_base_limits; install_singbox_sysctl; install_nic_tuning_service "tso on gso on gro on rx-gro-hw off lro off"; ask_reboot; break ;;
-      3) clear_screen; echo "[操作] VPS 虚拟机优化 ..."; install_vps_limits; install_vps_sysctl; install_nic_tuning_service "tso on gso on gro on rx-gro-hw off lro off"; ask_reboot; break ;;
+      1) ensure_grub_timeout_zero; clear_screen; echo "[操作] 本地 MOSDNS 虚拟机优化 ..."; install_base_limits; install_mosdns_sysctl; install_nic_tuning_service "tso off gso off gro off rx-gro-hw off lro off"; ask_reboot; break ;;
+      2) ensure_grub_timeout_zero; clear_screen; echo "[操作] 本地 SINGBOX 虚拟机优化 ..."; install_base_limits; install_singbox_sysctl; install_nic_tuning_service "tso on gso on gro on rx-gro-hw off lro off"; ask_reboot; break ;;
+      3) ensure_grub_timeout_zero; clear_screen; echo "[操作] VPS 虚拟机优化 ..."; install_vps_limits; install_vps_sysctl; install_nic_tuning_service "tso on gso on gro on rx-gro-hw off lro off"; ask_reboot; break ;;
       0) echo "已退出。"; break ;;
-      *) echo "无效选择：${choice} ，请按 0-3 重新输入。"; sleep 1 ;;
+      *) echo "无效选项，退出。"; exit 1 ;;
     esac
   done
 }
