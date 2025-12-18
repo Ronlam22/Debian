@@ -201,6 +201,8 @@ EOF
     ct state established,related accept
     iifname "docker0" accept
     oifname "docker0" accept
+    iifname "veth*" accept
+    oifname "veth*" accept
     iifname "br-*" accept
     oifname "br-*" accept
   }
@@ -362,6 +364,8 @@ cat >>"$tmp" <<'EOF2'
     ct state established,related accept
     iifname "docker0" accept
     oifname "docker0" accept
+    iifname "veth*" accept
+    oifname "veth*" accept
     iifname "br-*" accept
     oifname "br-*" accept
   }
