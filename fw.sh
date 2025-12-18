@@ -198,7 +198,7 @@ EOF
   chain forward {
     type filter hook forward priority 0;
     policy drop;
-    ct state established,related accept
+    ct state { new, established, related } accept
     iifname "docker0" accept
     oifname "docker0" accept
     iifname "veth*" accept
@@ -361,7 +361,7 @@ cat >>"$tmp" <<'EOF2'
   chain forward {
     type filter hook forward priority 0;
     policy drop;
-    ct state established,related accept
+    ct state { new, established, related } accept
     iifname "docker0" accept
     oifname "docker0" accept
     iifname "veth*" accept
