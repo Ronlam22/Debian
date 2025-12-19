@@ -608,7 +608,7 @@ echo
 
   write_files_install "$ssh_ports" "$allow_ping" "$allow_procs_str" "$open_ports" "${allow_lines[@]}"
 
-  systemctl daemon-reload; systemctl enable --now nftables; nft -f "$NFT_CONF"
+  systemctl daemon-reload; systemctl enable --now nftables
   systemctl enable nftables-port-sync.service; systemctl start nftables-port-sync.service || true
 
   echo; echo " 安装/更新完成。检查命令："
