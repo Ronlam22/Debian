@@ -122,8 +122,6 @@ write_nft_conf_dynamic(){
   cat >"$NFT_CONF" <<EOF
 #!/usr/sbin/nft -f
 
-flush ruleset
-
 table inet filter {
   set ssh_ports  { type inet_service; elements = { ${ssh_ports} } }
 EOF
@@ -282,8 +280,6 @@ tmp="$(mktemp /tmp/nftables.conf.XXXXXX)"
 cat >"$tmp" <<EOF2
 #!/usr/sbin/nft -f
 
-flush ruleset
-
 table inet filter {
   set ssh_ports { type inet_service; elements = { ${ssh_ports} } }
 EOF2
@@ -379,6 +375,7 @@ EOF2
 nft -c -f "$tmp"
 install -m 0644 "$tmp" "$NFT_CONF"
 rm -f "$tmp"
+nft delete table inet filter 2>/dev/null || true
 nft -f "$NFT_CONF"
 EOF
   chmod 0755 "$PORTSYNC_SCRIPT"
@@ -399,7 +396,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStartPre=/bin/sleep 20
+ExecStartPre=/bin/sleep 10
 ExecStart=/usr/local/sbin/nftables-port-sync.sh
 RemainAfterExit=yes
 
