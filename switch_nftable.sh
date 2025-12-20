@@ -88,16 +88,6 @@ set china_dns_ipv6 {
     elements = { 2400:3200::1, 2400:3200:baba::1 };
 }
 
-set remote_dns_ipv4 {
-    type ipv4_addr;
-    elements = { 8.8.8.8, 8.8.4.4, 1.1.1.1, 1.0.0.1 };
-}
-
-set remote_dns_ipv6 {
-    type ipv6_addr;
-    elements = { 2001:4860:4860::8888, 2001:4860:4860::8844, 2606:4700:4700::1111, 2606:4700:4700::1001 };
-}
-
 set fake_ipv4 {
     type ipv4_addr;
     flags interval;
@@ -122,31 +112,28 @@ set local_ipv6 {
     elements = { ::ffff:0.0.0.0/96, 64:ff9b::/96, 100::/64, 2001:10::/28, 2001:20::/28, 2001:db8::/32, 2002::/16, fe80::/10 };
 }
 
-chain redirect-proxy {
-    fib daddr type { unspec, local, anycast, multicast } return
+chain redirect-prerouting {
+    type nat hook prerouting priority dstnat; policy accept;
+    meta l4proto != tcp return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
     ip daddr @china_dns_ipv4 return
     ip6 daddr @china_dns_ipv6 return
     meta l4proto tcp redirect to :$REDIRECT_PORT
-}    
-
-chain redirect-prerouting {
-    type nat hook prerouting priority dstnat; policy accept;
-    meta l4proto != tcp return
-    goto redirect-proxy
 }
 
 chain redirect-output {
     type nat hook output priority dstnat; policy accept;
     meta l4proto != tcp return
-    fib daddr type { unspec, local, anycast, multicast } return
     skgid 1 return
+    fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @fake_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip6 daddr @fake_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
 }
 
-chain tproxy-proxy {    
+chain tproxy-prerouting {
+    type filter hook prerouting priority mangle; policy accept;
+    meta l4proto != udp return
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
@@ -157,7 +144,10 @@ chain tproxy-proxy {
     ip6 nexthdr udp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
 }
 
-chain tproxy-mark {
+chain tproxy-output {
+    type filter hook output priority mangle; policy accept;
+    meta l4proto != udp return
+    skgid 1 return
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
@@ -165,19 +155,6 @@ chain tproxy-mark {
     ip6 daddr @china_dns_ipv6 return
     udp dport {123} return
     meta mark set 1
-}
-
-chain tproxy-prerouting {
-    type filter hook prerouting priority mangle; policy accept;
-    meta l4proto != udp return
-    goto tproxy-proxy
-}
-
-chain tproxy-output {
-	type route hook output priority mangle; policy accept;
-    meta l4proto != udp return
-    skgid 1 return
-    goto tproxy-mark
 }
 }
 EOF
@@ -201,16 +178,6 @@ set china_dns_ipv6 {
     elements = { 2400:3200::1, 2400:3200:baba::1 };
 }
 
-set remote_dns_ipv4 {
-    type ipv4_addr;
-    elements = { 8.8.8.8, 8.8.4.4, 1.1.1.1, 1.0.0.1 };
-}
-
-set remote_dns_ipv6 {
-    type ipv6_addr;
-    elements = { 2001:4860:4860::8888, 2001:4860:4860::8844, 2606:4700:4700::1111, 2606:4700:4700::1001 };
-}
-
 set fake_ipv4 {
     type ipv4_addr;
     flags interval;
@@ -235,7 +202,9 @@ set local_ipv6 {
     elements = { ::ffff:0.0.0.0/96, 64:ff9b::/96, 100::/64, 2001:10::/28, 2001:20::/28, 2001:db8::/32, 2002::/16, fe80::/10 };
 }
 
-chain tproxy-proxy {
+chain tproxy-prerouting {
+    type filter hook prerouting priority mangle; policy accept;
+    meta l4proto != { tcp, udp } return
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
@@ -248,7 +217,10 @@ chain tproxy-proxy {
     ip6 nexthdr udp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
 }
 
-chain tproxy-mark {
+chain tproxy-output {
+    type filter hook output priority mangle; policy accept;
+    meta l4proto != { tcp, udp } return
+    skgid 1 return
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
@@ -256,19 +228,6 @@ chain tproxy-mark {
     ip6 daddr @china_dns_ipv6 return
     udp dport {123} return
     meta mark set 1
-}
-
-chain tproxy-prerouting {
-    type filter hook prerouting priority mangle; policy accept;
-    meta l4proto != { tcp, udp } return
-    goto tproxy-proxy
-}
-
-chain tproxy-output {
-	type route hook output priority mangle; policy accept;
-    meta l4proto != { tcp, udp } return
-    skgid 1 return
-    goto tproxy-mark
 }
 }
 EOF
@@ -368,7 +327,7 @@ chain tproxy-prerouting {
 }
 
 chain tproxy-output {
-	type route hook output priority mangle; policy accept;
+    type route hook output priority mangle; policy accept;
     meta l4proto != udp return
     skgid 1 return
     ip daddr @fake_ipv4 meta mark set 1 accept
@@ -449,7 +408,7 @@ chain tproxy-prerouting {
 }
 
 chain tproxy-output {
-	type route hook output priority mangle; policy accept;
+    type route hook output priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
     skgid 1 return
     ip daddr @fake_ipv4 meta mark set 1 accept
