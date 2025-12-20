@@ -125,7 +125,7 @@ chain redirect-prerouting {
 chain redirect-output {
     type nat hook output priority dstnat; policy accept;
     meta l4proto != tcp return
-    skgid 1 return
+    skgid 0 return
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @fake_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip6 daddr @fake_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
@@ -147,7 +147,7 @@ chain tproxy-prerouting {
 chain tproxy-output {
     type filter hook output priority mangle; policy accept;
     meta l4proto != udp return
-    skgid 1 return
+    skgid 0 return
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
@@ -220,7 +220,7 @@ chain tproxy-prerouting {
 chain tproxy-output {
     type filter hook output priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
-    skgid 1 return
+    skgid 0 return
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
@@ -296,7 +296,7 @@ chain redirect-prerouting {
 chain redirect-output {
     type nat hook output priority dstnat; policy accept;
     meta l4proto != tcp return
-    skgid 1 return
+    skgid 0 return
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @fake_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip6 daddr @fake_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
@@ -321,7 +321,7 @@ chain tproxy-prerouting {
 chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != udp return
-    skgid 1 return
+    skgid 0 return
     ip daddr @fake_ipv4 meta mark set 1 accept
     ip6 daddr @fake_ipv6 meta mark set 1 accept
     ip daddr @telegram_ipv4 meta mark set 1 accept
@@ -398,7 +398,7 @@ chain tproxy-prerouting {
 chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
-    skgid 1 return
+    skgid 0 return
     ip daddr @fake_ipv4 meta mark set 1 accept
     ip6 daddr @fake_ipv6 meta mark set 1 accept
     ip daddr @telegram_ipv4 meta mark set 1 accept
