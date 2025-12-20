@@ -174,7 +174,7 @@ chain tproxy-prerouting {
 }
 
 chain tproxy-output {
-    type filter hook output priority mangle; policy accept;
+	type route hook output priority mangle; policy accept;
     meta l4proto != udp return
     skgid 1 return
     goto tproxy-mark
@@ -265,7 +265,7 @@ chain tproxy-prerouting {
 }
 
 chain tproxy-output {
-    type filter hook output priority mangle; policy accept;
+	type route hook output priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
     skgid 1 return
     goto tproxy-mark
@@ -368,7 +368,7 @@ chain tproxy-prerouting {
 }
 
 chain tproxy-output {
-	type filter hook output priority mangle; policy accept;
+	type route hook output priority mangle; policy accept;
     meta l4proto != udp return
     skgid 1 return
     ip daddr @fake_ipv4 meta mark set 1 accept
@@ -449,7 +449,7 @@ chain tproxy-prerouting {
 }
 
 chain tproxy-output {
-	type filter hook output priority mangle; policy accept;
+	type route hook output priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
     skgid 1 return
     ip daddr @fake_ipv4 meta mark set 1 accept
