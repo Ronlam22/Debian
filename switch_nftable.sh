@@ -52,7 +52,7 @@ echo "========================================================"
 echo "          端口与Fake-IP参数设置"
 echo "========================================================"
 read_line "请输入Redirect端口(默认9777): " "9777"; REDIRECT_PORT="$REPLY"
-read_line "请输入TPROXY端口(默认9888): " "9888";  TPROXY_PORT="$REPLY"
+read_line "请输入TPROXY端口(默认9888): " "9888"; TPROXY_PORT="$REPLY"
 read_line "请输入Fake_ipv4网段(默认28.0.0.0/8): " "28.0.0.0/8"; FAKE_IPV4_CIDR="$REPLY"
 read_line "请输入Fake_ipv6网段(默认 2001:2::/64): " "2001:2::/64"; FAKE_IPV6_CIDR="$REPLY"
 
@@ -65,6 +65,11 @@ echo "  TPROXY端口    : $TPROXY_PORT"
 echo "  fake_ipv4     : $FAKE_IPV4_CIDR"
 echo "  fake_ipv6     : $FAKE_IPV6_CIDR"
 echo
+
+SINGBOX_GID="$(ps -o gid= -C sing-box 2>/dev/null | head -n1 | tr -d ' ')"
+[[ -z "$SINGBOX_GID" ]] && \
+SINGBOX_GID="$(ps -o gid= -C singbox 2>/dev/null | head -n1 | tr -d ' ')"
+[[ -z "$SINGBOX_GID" ]] && SINGBOX_GID=0
 
 if [[ "$MODE" == "global" ]]; then
   # 全局模式(Global Mode)
@@ -124,26 +129,27 @@ chain redirect-proxy {
 chain redirect-prerouting {
     type nat hook prerouting priority dstnat; policy accept;
     meta l4proto != tcp return
-    ct direction original goto redirect-proxy
+    ct state new ct direction original goto redirect-proxy
 }
 
 chain redirect-output {
     type nat hook output priority dstnat; policy accept;
     meta l4proto != tcp return
+    meta skgid $SINGBOX_GID return
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @fake_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip6 daddr @fake_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
 }
 
-chain tproxy-proxy {    
+chain tproxy-proxy {
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
     ip daddr @china_dns_ipv4 return
     ip6 daddr @china_dns_ipv6 return
-    udp dport {123} return    
-    meta l4proto udp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    meta l4proto udp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    udp dport {123} return
+    ip protocol udp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip6 nexthdr udp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
 }
 
 chain tproxy-mark {
@@ -154,18 +160,24 @@ chain tproxy-mark {
     ip6 daddr @china_dns_ipv6 return
     udp dport {123} return
     meta mark set 1
+    meta l4proto udp ct mark set 1
 }
 
 chain tproxy-prerouting {
     type filter hook prerouting priority mangle; policy accept;
     meta l4proto != udp return
+    ct direction reply return
+    ct direction original ct mark 1 meta mark set 1 return
     ct direction original goto tproxy-proxy
 }
 
 chain tproxy-output {
-	type route hook output priority mangle; policy accept;
+    type route hook output priority mangle; policy accept;
     meta l4proto != udp return
-	ct direction original goto tproxy-mark
+    meta skgid $SINGBOX_GID return
+    ct direction reply return
+    ct direction original ct mark 1 meta mark set 1 return
+    ct direction original goto tproxy-mark
 }
 }
 EOF
@@ -221,9 +233,9 @@ chain tproxy-proxy {
     ip6 daddr @china_dns_ipv6 return
     udp dport {123} return
     ip protocol tcp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip protocol udp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
     ip6 nexthdr tcp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
-    ip6 nexthdr udp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip protocol udp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip6 nexthdr udp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
 }
 
 chain tproxy-mark {
@@ -234,18 +246,25 @@ chain tproxy-mark {
     ip6 daddr @china_dns_ipv6 return
     udp dport {123} return
     meta mark set 1
+    meta l4proto udp ct mark set 1
 }
 
 chain tproxy-prerouting {
     type filter hook prerouting priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
+    ct direction reply return
+    meta l4proto udp ct direction original ct mark 1 meta mark set 1 return
     ct direction original goto tproxy-proxy
 }
 
 chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
-    ct direction original goto tproxy-mark
+    meta skgid $SINGBOX_GID return
+    ct direction reply return
+    meta l4proto udp ct direction original ct mark 1 meta mark set 1 return
+    meta l4proto tcp ct state new ct direction original goto tproxy-mark
+    meta l4proto udp ct direction original goto tproxy-mark
 }
 }
 EOF
@@ -300,8 +319,22 @@ set fake_ipv6 {
     elements = { $FAKE_IPV6_CIDR };
 }
 
+set local_ipv4 {
+    type ipv4_addr;
+    flags interval;
+    elements = { 0.0.0.0/8, 10.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4 };
+}
+
+set local_ipv6 {
+    type ipv6_addr;
+    flags interval;
+    elements = { ::ffff:0.0.0.0/96, 64:ff9b::/96, 100::/64, 2001:10::/28, 2001:20::/28, 2001:db8::/32, 2002::/16, fe80::/10 };
+}
+
 chain redirect-proxy {
     fib daddr type { unspec, local, anycast, multicast } return
+    ip daddr @local_ipv4 return
+    ip6 daddr @local_ipv6 return
     ip daddr @fake_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip6 daddr @fake_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip daddr @telegram_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
@@ -313,13 +346,16 @@ chain redirect-proxy {
 chain redirect-prerouting {
     type nat hook prerouting priority dstnat; policy accept;
     meta l4proto != tcp return
-    ct direction original goto redirect-proxy
+    ct state new ct direction original goto redirect-proxy
 }
 
 chain redirect-output {
     type nat hook output priority dstnat; policy accept;
     meta l4proto != tcp return
+    meta skgid $SINGBOX_GID return
     fib daddr type { unspec, local, anycast, multicast } return
+    ip daddr @local_ipv4 return
+    ip6 daddr @local_ipv6 return
     ip daddr @fake_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip6 daddr @fake_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip daddr @telegram_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
@@ -328,31 +364,38 @@ chain redirect-output {
     ip6 daddr @remote_dns_ipv6 tcp dport 53 redirect to :$REDIRECT_PORT
 }
 
-chain tproxy-proxy {    
+chain tproxy-proxy {
     fib daddr type { unspec, local, anycast, multicast } return
-    ip daddr @fake_ipv4 meta l4proto udp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip6 daddr @fake_ipv6 meta l4proto udp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
-    ip daddr @telegram_ipv4 meta l4proto udp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip6 daddr @telegram_ipv6 meta l4proto udp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
-    ip daddr @remote_dns_ipv4 udp dport 53 meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip6 daddr @remote_dns_ipv6 udp dport 53 meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip daddr @local_ipv4 return
+    ip6 daddr @local_ipv6 return
+    ip protocol udp ip daddr @fake_ipv4 meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip6 nexthdr udp ip6 daddr @fake_ipv6 meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip protocol udp ip daddr @telegram_ipv4 meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip6 nexthdr udp ip6 daddr @telegram_ipv6 meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip daddr @remote_dns_ipv4 udp dport 53 meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip6 daddr @remote_dns_ipv6 udp dport 53 meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
 }
 
 chain tproxy-prerouting {
     type filter hook prerouting priority mangle; policy accept;
     meta l4proto != udp return
+    ct direction reply return
+    ct direction original ct mark 1 meta mark set 1 return
     ct direction original goto tproxy-proxy
 }
 
 chain tproxy-output {
-	type route hook output priority mangle; policy accept;
+    type route hook output priority mangle; policy accept;
     meta l4proto != udp return
-    ip daddr @fake_ipv4 meta mark set 1 accept
-    ip6 daddr @fake_ipv6 meta mark set 1 accept
-    ip daddr @telegram_ipv4 meta mark set 1 accept
-    ip6 daddr @telegram_ipv6 meta mark set 1 accept
-    ip daddr @remote_dns_ipv4 udp dport 53 meta mark set 1 accept
-    ip6 daddr @remote_dns_ipv6 udp dport 53 meta mark set 1 accept
+    meta skgid $SINGBOX_GID return
+    ct direction reply return
+    ct direction original ct mark 1 meta mark set 1 return
+    ip protocol udp ip daddr @fake_ipv4 meta mark set 1 ct mark set 1 return
+    ip6 nexthdr udp ip6 daddr @fake_ipv6 meta mark set 1 ct mark set 1 return
+    ip protocol udp ip daddr @telegram_ipv4 meta mark set 1 ct mark set 1 return
+    ip6 nexthdr udp ip6 daddr @telegram_ipv6 meta mark set 1 ct mark set 1 return
+    ip daddr @remote_dns_ipv4 udp dport 53 meta mark set 1 ct mark set 1 return
+    ip6 daddr @remote_dns_ipv6 udp dport 53 meta mark set 1 ct mark set 1 return
 }
 }
 EOF
@@ -402,39 +445,44 @@ set fake_ipv6 {
     elements = { $FAKE_IPV6_CIDR };
 }
 
-chain tproxy-proxy {    
+chain tproxy-proxy {
     fib daddr type { unspec, local, anycast, multicast } return
-    ip daddr @fake_ipv4 ip protocol tcp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip daddr @fake_ipv4 ip protocol udp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip6 daddr @fake_ipv6 ip6 nexthdr tcp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
-    ip6 daddr @fake_ipv6 ip6 nexthdr udp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
-    ip daddr @telegram_ipv4 ip protocol tcp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip daddr @telegram_ipv4 ip protocol udp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip6 daddr @telegram_ipv6 ip6 nexthdr tcp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
-    ip6 daddr @telegram_ipv6 ip6 nexthdr udp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
-    ip daddr @remote_dns_ipv4 tcp dport 53 meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip daddr @remote_dns_ipv4 udp dport 53 meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip6 daddr @remote_dns_ipv6 tcp dport 53 meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
-    ip6 daddr @remote_dns_ipv6 udp dport 53 meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip daddr @fake_ipv4 ip protocol tcp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip daddr @fake_ipv4 ip protocol udp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip6 daddr @fake_ipv6 ip6 nexthdr tcp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip6 daddr @fake_ipv6 ip6 nexthdr udp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip daddr @telegram_ipv4 ip protocol tcp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip daddr @telegram_ipv4 ip protocol udp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip6 daddr @telegram_ipv6 ip6 nexthdr tcp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip6 daddr @telegram_ipv6 ip6 nexthdr udp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip daddr @remote_dns_ipv4 tcp dport 53 meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip daddr @remote_dns_ipv4 udp dport 53 meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip6 daddr @remote_dns_ipv6 tcp dport 53 meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip6 daddr @remote_dns_ipv6 udp dport 53 meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
 }
 
 chain tproxy-prerouting {
     type filter hook prerouting priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
+    ct direction reply return
+    ct direction original ct mark 1 meta mark set 1 return
     ct direction original goto tproxy-proxy
 }
 
 chain tproxy-output {
-	type route hook output priority mangle; policy accept;
+    type route hook output priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
-    ip daddr @fake_ipv4 meta mark set 1 accept
-    ip6 daddr @fake_ipv6 meta mark set 1 accept
-    ip daddr @telegram_ipv4 meta mark set 1 accept
-    ip6 daddr @telegram_ipv6 meta mark set 1 accept
-    ip daddr @remote_dns_ipv4 tcp dport 53 meta mark set 1 accept
-    ip daddr @remote_dns_ipv4 udp dport 53 meta mark set 1 accept
-    ip6 daddr @remote_dns_ipv6 tcp dport 53 meta mark set 1 accept
-    ip6 daddr @remote_dns_ipv6 udp dport 53 meta mark set 1 accept
+    meta skgid $SINGBOX_GID return
+    ct direction reply return
+    ct direction original ct mark 1 meta mark set 1 return
+    ip daddr @fake_ipv4 meta mark set 1 ct mark set 1 return
+    ip6 daddr @fake_ipv6 meta mark set 1 ct mark set 1 return
+    ip daddr @telegram_ipv4 meta mark set 1 ct mark set 1 return
+    ip6 daddr @telegram_ipv6 meta mark set 1 ct mark set 1 return
+    ip daddr @remote_dns_ipv4 tcp dport 53 meta mark set 1 ct mark set 1 return
+    ip daddr @remote_dns_ipv4 udp dport 53 meta mark set 1 ct mark set 1 return
+    ip6 daddr @remote_dns_ipv6 tcp dport 53 meta mark set 1 ct mark set 1 return
+    ip6 daddr @remote_dns_ipv6 udp dport 53 meta mark set 1 ct mark set 1 return
 }
 }
 EOF
@@ -452,7 +500,7 @@ if command -v systemctl &>/dev/null; then
   fi
 
   echo "正在重启 nftables 服务..."
-  systemctl restart nftables
+  sudo systemctl restart nftables
 else
   echo "加载新配置..."
   nft -f "$TARGET_CONF"
