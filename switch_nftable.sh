@@ -500,7 +500,7 @@ if command -v systemctl &>/dev/null; then
   fi
 
   echo "正在重启 nftables 服务..."
-  sudo systemctl restart nftables
+  systemctl restart nftables
 else
   echo "加载新配置..."
   nft -f "$TARGET_CONF"
