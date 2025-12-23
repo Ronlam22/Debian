@@ -1,16 +1,52 @@
 #!/bin/bash
 
-clear_screen(){ command -v tput >/dev/null 2>&1 && tput clear || printf "\033c"; }; clear_screen
+clear_screen() {
+    if command -v tput >/dev/null 2>&1; then
+        tput clear
+    else
+        printf "\033c"
+    fi
+}
+clear_screen
 
 TARGET_CONF="/etc/nftables.conf"
 
-read_line(){
-  local prompt="$1" default="$2" char buf=""; printf "%s" "$prompt"
-  while IFS= read -r -s -n1 char; do
-    [[ -z "$char" || "$char" == $'\n' || "$char" == $'\r' ]] && { printf "\n"; break; }
-    if [[ "$char" == $'\177' || "$char" == $'\010' ]]; then [[ -n "$buf" ]] && { buf=${buf%?}; printf '\b \b'; }; else buf+="$char"; printf '%s' "$char"; fi
-  done
-  [[ -z "$buf" && -n "$default" ]] && REPLY="$default" || REPLY="$buf"
+read_line() {
+    local prompt="$1"
+    local default="$2"
+    local char
+    local buf=""
+
+    # 打印提示
+    printf "%s" "$prompt"
+
+    # 逐字符读取，处理退格
+    while IFS= read -r -s -n1 char; do
+        # 回车：结束输入
+        if [[ -z "$char" || "$char" == $'\n' || "$char" == $'\r' ]]; then
+            printf "\n"
+            break
+        fi
+
+        # Backspace（0x7f 或 0x08）：删除一个字符
+        if [[ "$char" == $'\177' || "$char" == $'\010' ]]; then
+            if [[ -n "$buf" ]]; then
+                buf=${buf%?}
+                printf '\b \b'
+            fi
+        else
+            # 正常字符
+            buf+="$char"
+            printf '%s' "$char"
+        fi
+    done
+
+    # 处理默认值
+    if [[ -z "$buf" && -n "$default" ]]; then
+        REPLY="$default"
+    else
+        REPLY="$buf"
+    fi
 }
 
 echo "========================================================"
@@ -19,16 +55,28 @@ echo "========================================================"
 echo "1) 全局模式(Global Mode —— 仅指定目标走直连(其余全部代理)"
 echo "2) 规则模式(Rule Mode   —— 仅指定目标走代理(其余全部直连)"
 echo "0) 退出"
-read -r -e -p "输入选项 [0-2]: " mode_choice || true
-mode_choice="${mode_choice//[[:space:]]/}"
-[[ "$mode_choice" == "0" ]] && { echo "已退出。"; exit 0; }
+read_line "输入选项 [0-2]: " ""
+mode_choice="$REPLY"
+
+if [[ "$mode_choice" == "0" ]]; then
+    echo "已退出。"
+    exit 0
+fi
 
 case "$mode_choice" in
-  1) MODE="global"; MODE_NAME="全局模式" ;;
-  2) MODE="rule";   MODE_NAME="规则模式" ;;
-  *) echo "无效选项，退出。"; exit 1 ;;
+  1)
+    MODE="global"
+    MODE_NAME="全局模式"
+    ;;
+  2)
+    MODE="rule"
+    MODE_NAME="规则模式"
+    ;;
+  *)
+    echo "无效选项，退出。"
+    exit 1
+    ;;
 esac
-
 
 echo
 echo "========================================================"
@@ -37,24 +85,45 @@ echo "========================================================"
 echo "1) 混合模式     —— (TCP Redirect + UDP TPROXY)"
 echo "2) 纯TPROXY模式 —— (TCP + UDP TPROXY)"
 echo "0) 退出"
-read -r -e -p "输入选项 [0-2]: " impl_choice || true
-impl_choice="${impl_choice//[[:space:]]/}"
-[[ "$impl_choice" == "0" ]] && { echo "已退出。"; exit 0; }
+read_line "输入选项 [0-2]: " ""
+impl_choice="$REPLY"
+
+if [[ "$mode_choice" == "0" ]]; then
+    echo "已退出。"
+    exit 0
+fi
 
 case "$impl_choice" in
-  1) IMPL="hybrid"; IMPL_NAME="混合模式" ;;
-  2) IMPL="pure";   IMPL_NAME="纯TPROXY模式" ;;
-  *) echo "无效选项，退出。"; exit 1 ;;
+  1)
+    IMPL="hybrid"
+    IMPL_NAME="混合模式"
+    ;;
+  2)
+    IMPL="pure"
+    IMPL_NAME="纯TPROXY模式"
+    ;;
+  *)
+    echo "无效选项，退出。"
+    exit 1
+    ;;
 esac
 
 echo
 echo "========================================================"
 echo "          端口与Fake-IP参数设置"
 echo "========================================================"
-read_line "请输入Redirect端口(默认9777): " "9777"; REDIRECT_PORT="$REPLY"
-read_line "请输入TPROXY端口(默认9888): " "9888";  TPROXY_PORT="$REPLY"
-read_line "请输入Fake_ipv4网段(默认28.0.0.0/8): " "28.0.0.0/8"; FAKE_IPV4_CIDR="$REPLY"
-read_line "请输入Fake_ipv6网段(默认 2001:2::/64): " "2001:2::/64"; FAKE_IPV6_CIDR="$REPLY"
+
+read_line "请输入Redirect端口(默认9777): " "9777"
+REDIRECT_PORT="$REPLY"
+
+read_line "请输入TPROXY端口(默认9888): " "9888"
+TPROXY_PORT="$REPLY"
+
+read_line "请输入Fake_ipv4网段(默认28.0.0.0/8): " "28.0.0.0/8"
+FAKE_IPV4_CIDR="$REPLY"
+
+read_line "请输入Fake_ipv6网段(默认 2001:2::/64): " "2001:2::/64"
+FAKE_IPV6_CIDR="$REPLY"
 
 echo
 echo "将使用配置: "
@@ -65,17 +134,13 @@ echo "  TPROXY端口    : $TPROXY_PORT"
 echo "  fake_ipv4     : $FAKE_IPV4_CIDR"
 echo "  fake_ipv6     : $FAKE_IPV6_CIDR"
 echo
-SINGBOX_UID="$(ps -o uid= -C sing-box 2>/dev/null | head -n1 | tr -d ' ')"
-[[ -z "$SINGBOX_UID" ]] && \
-SINGBOX_UID="$(ps -o uid= -C singbox 2>/dev/null | head -n1 | tr -d ' ')"
-[[ -z "$SINGBOX_UID" ]] && SINGBOX_UID=0
 
 if [[ "$MODE" == "global" ]]; then
   # 全局模式(Global Mode)
   case "$IMPL" in
     hybrid)
       echo "应用: 全局模式 + 混合模式(TCP Redirect + UDP TPROXY)..."
-      cat >"$TARGET_CONF" <<EOF
+      cat > "$TARGET_CONF" <<EOF
 #!/usr/sbin/nft -f
 
 flush ruleset
@@ -90,6 +155,16 @@ set china_dns_ipv4 {
 set china_dns_ipv6 {
     type ipv6_addr;
     elements = { 2400:3200::1, 2400:3200:baba::1 };
+}
+
+set remote_dns_ipv4 {
+    type ipv4_addr;
+    elements = { 8.8.8.8, 8.8.4.4, 1.1.1.1, 1.0.0.1 };
+}
+
+set remote_dns_ipv6 {
+    type ipv6_addr;
+    elements = { 2001:4860:4860::8888, 2001:4860:4860::8844, 2606:4700:4700::1111, 2606:4700:4700::1001 };
 }
 
 set fake_ipv4 {
@@ -116,42 +191,43 @@ set local_ipv6 {
     elements = { ::ffff:0.0.0.0/96, 64:ff9b::/96, 100::/64, 2001:10::/28, 2001:20::/28, 2001:db8::/32, 2002::/16, fe80::/10 };
 }
 
-chain redirect-prerouting {
-    type nat hook prerouting priority dstnat; policy accept;
-    meta l4proto != tcp return
+chain redirect-proxy {
+    fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
     ip daddr @china_dns_ipv4 return
     ip6 daddr @china_dns_ipv6 return
     meta l4proto tcp redirect to :$REDIRECT_PORT
+}    
+
+chain redirect-prerouting {
+    type nat hook prerouting priority dstnat; policy accept;
+    meta l4proto != tcp return
+    ct direction != original return
+    goto redirect-proxy
 }
 
 chain redirect-output {
     type nat hook output priority dstnat; policy accept;
     meta l4proto != tcp return
-    skuid $SINGBOX_UID return
     fib daddr type { unspec, local, anycast, multicast } return
+    skgid 0 return
     ip daddr @fake_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip6 daddr @fake_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
 }
 
-chain tproxy-prerouting {
-    type filter hook prerouting priority mangle; policy accept;
-    meta l4proto != udp return
+chain tproxy-proxy {    
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
     ip daddr @china_dns_ipv4 return
     ip6 daddr @china_dns_ipv6 return
     udp dport {123} return    
-    ip protocol udp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip6 nexthdr udp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    meta l4proto udp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    meta l4proto udp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
 }
 
-chain tproxy-output {
-    type filter hook output priority mangle; policy accept;
-    meta l4proto != udp return
-    skuid $SINGBOX_UID return
+chain tproxy-mark {
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
@@ -160,12 +236,26 @@ chain tproxy-output {
     udp dport {123} return
     meta mark set 1
 }
+
+chain tproxy-prerouting {
+    type filter hook prerouting priority mangle; policy accept;
+    meta l4proto != udp return
+    ct direction != original return
+    goto tproxy-proxy
+}
+
+chain tproxy-output {
+	type route hook output priority mangle; policy accept;
+    meta l4proto != udp return
+    skgid 0 return
+	goto tproxy-mark
+}
 }
 EOF
       ;;
     pure)
       echo "应用: 全局模式 + 纯TPROXY模式(TCP + UDP TPROXY)..."
-      cat >"$TARGET_CONF" <<EOF
+      cat > "$TARGET_CONF" <<EOF
 #!/usr/sbin/nft -f
 
 flush ruleset
@@ -180,6 +270,16 @@ set china_dns_ipv4 {
 set china_dns_ipv6 {
     type ipv6_addr;
     elements = { 2400:3200::1, 2400:3200:baba::1 };
+}
+
+set remote_dns_ipv4 {
+    type ipv4_addr;
+    elements = { 8.8.8.8, 8.8.4.4, 1.1.1.1, 1.0.0.1 };
+}
+
+set remote_dns_ipv6 {
+    type ipv6_addr;
+    elements = { 2001:4860:4860::8888, 2001:4860:4860::8844, 2606:4700:4700::1111, 2606:4700:4700::1001 };
 }
 
 set fake_ipv4 {
@@ -206,25 +306,20 @@ set local_ipv6 {
     elements = { ::ffff:0.0.0.0/96, 64:ff9b::/96, 100::/64, 2001:10::/28, 2001:20::/28, 2001:db8::/32, 2002::/16, fe80::/10 };
 }
 
-chain tproxy-prerouting {
-    type filter hook prerouting priority mangle; policy accept;
-    meta l4proto != { tcp, udp } return
+chain tproxy-proxy {
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
     ip daddr @china_dns_ipv4 return
     ip6 daddr @china_dns_ipv6 return
     udp dport {123} return
-    ip protocol tcp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip protocol udp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip6 nexthdr tcp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
-    ip6 nexthdr udp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip protocol tcp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip protocol udp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip6 nexthdr tcp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip6 nexthdr udp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
 }
 
-chain tproxy-output {
-    type filter hook output priority mangle; policy accept;
-    meta l4proto != { tcp, udp } return
-    skuid $SINGBOX_UID return
+chain tproxy-mark {
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
@@ -233,16 +328,32 @@ chain tproxy-output {
     udp dport {123} return
     meta mark set 1
 }
+
+chain tproxy-prerouting {
+    type filter hook prerouting priority mangle; policy accept;
+    meta l4proto != { tcp, udp } return
+    ct direction != original return
+    goto tproxy-proxy
+}
+
+chain tproxy-output {
+    type route hook output priority mangle; policy accept;
+    meta l4proto != { tcp, udp } return
+    ct direction != original return
+    skgid 0 return
+    goto tproxy-mark
+}
 }
 EOF
       ;;
   esac
+
 else
   # 规则模式(Rule-based Mode)
   case "$IMPL" in
     hybrid)
       echo "应用: 规则模式 + 混合模式(TCP Redirect + UDP TPROXY)..."
-      cat >"$TARGET_CONF" <<EOF
+      cat > "$TARGET_CONF" <<EOF
 #!/usr/sbin/nft -f
 
 flush ruleset
@@ -285,9 +396,7 @@ set fake_ipv6 {
     elements = { $FAKE_IPV6_CIDR };
 }
 
-chain redirect-prerouting {
-    type nat hook prerouting priority dstnat; policy accept;
-    meta l4proto != tcp return
+chain redirect-proxy {
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @fake_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip6 daddr @fake_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
@@ -295,13 +404,20 @@ chain redirect-prerouting {
     ip6 daddr @telegram_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip daddr @remote_dns_ipv4 tcp dport 53 redirect to :$REDIRECT_PORT
     ip6 daddr @remote_dns_ipv6 tcp dport 53 redirect to :$REDIRECT_PORT
+}    
+
+chain redirect-prerouting {
+    type nat hook prerouting priority dstnat; policy accept;
+    meta l4proto != tcp return
+    ct direction != original return
+    goto redirect-proxy
 }
 
 chain redirect-output {
     type nat hook output priority dstnat; policy accept;
     meta l4proto != tcp return
-    skuid $SINGBOX_UID return
     fib daddr type { unspec, local, anycast, multicast } return
+    skgid 0 return
     ip daddr @fake_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip6 daddr @fake_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip daddr @telegram_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
@@ -310,22 +426,27 @@ chain redirect-output {
     ip6 daddr @remote_dns_ipv6 tcp dport 53 redirect to :$REDIRECT_PORT
 }
 
+chain tproxy-proxy {    
+    fib daddr type { unspec, local, anycast, multicast } return
+    ip daddr @fake_ipv4 meta l4proto udp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip6 daddr @fake_ipv6 meta l4proto udp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip daddr @telegram_ipv4 meta l4proto udp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip6 daddr @telegram_ipv6 meta l4proto udp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip daddr @remote_dns_ipv4 udp dport 53 meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip6 daddr @remote_dns_ipv6 udp dport 53 meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+}
+
 chain tproxy-prerouting {
     type filter hook prerouting priority mangle; policy accept;
     meta l4proto != udp return
-    fib daddr type { unspec, local, anycast, multicast } return
-    ip daddr @fake_ipv4 meta l4proto udp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip6 daddr @fake_ipv6 meta l4proto udp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
-    ip daddr @telegram_ipv4 meta l4proto udp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip6 daddr @telegram_ipv6 meta l4proto udp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
-    ip daddr @remote_dns_ipv4 udp dport 53 meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip6 daddr @remote_dns_ipv6 udp dport 53 meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ct direction != original return
+    goto tproxy-proxy
 }
 
 chain tproxy-output {
-    type route hook output priority mangle; policy accept;
+	type route hook output priority mangle; policy accept;
     meta l4proto != udp return
-    skuid $SINGBOX_UID return
+    skgid 0 return
     ip daddr @fake_ipv4 meta mark set 1 accept
     ip6 daddr @fake_ipv6 meta mark set 1 accept
     ip daddr @telegram_ipv4 meta mark set 1 accept
@@ -338,7 +459,7 @@ EOF
       ;;
     pure)
       echo "应用: 规则模式 + 纯TPROXY模式(TCP + UDP TPROXY)..."
-      cat >"$TARGET_CONF" <<EOF
+      cat > "$TARGET_CONF" <<EOF
 #!/usr/sbin/nft -f
 
 flush ruleset
@@ -381,28 +502,33 @@ set fake_ipv6 {
     elements = { $FAKE_IPV6_CIDR };
 }
 
+chain tproxy-proxy {    
+    fib daddr type { unspec, local, anycast, multicast } return
+    ip daddr @fake_ipv4 ip protocol tcp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip daddr @fake_ipv4 ip protocol udp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip6 daddr @fake_ipv6 ip6 nexthdr tcp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip6 daddr @fake_ipv6 ip6 nexthdr udp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip daddr @telegram_ipv4 ip protocol tcp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip daddr @telegram_ipv4 ip protocol udp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip6 daddr @telegram_ipv6 ip6 nexthdr tcp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip6 daddr @telegram_ipv6 ip6 nexthdr udp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip daddr @remote_dns_ipv4 tcp dport 53 meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip daddr @remote_dns_ipv4 udp dport 53 meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
+    ip6 daddr @remote_dns_ipv6 tcp dport 53 meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ip6 daddr @remote_dns_ipv6 udp dport 53 meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+}
+
 chain tproxy-prerouting {
     type filter hook prerouting priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
-    fib daddr type { unspec, local, anycast, multicast } return
-    ip daddr @fake_ipv4 ip protocol tcp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip daddr @fake_ipv4 ip protocol udp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip6 daddr @fake_ipv6 ip6 nexthdr tcp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
-    ip6 daddr @fake_ipv6 ip6 nexthdr udp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
-    ip daddr @telegram_ipv4 ip protocol tcp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip daddr @telegram_ipv4 ip protocol udp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip6 daddr @telegram_ipv6 ip6 nexthdr tcp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
-    ip6 daddr @telegram_ipv6 ip6 nexthdr udp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
-    ip daddr @remote_dns_ipv4 tcp dport 53 meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip daddr @remote_dns_ipv4 udp dport 53 meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip6 daddr @remote_dns_ipv6 tcp dport 53 meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
-    ip6 daddr @remote_dns_ipv6 udp dport 53 meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    ct direction != original return
+    goto tproxy-proxy
 }
 
 chain tproxy-output {
-    type route hook output priority mangle; policy accept;
+	type route hook output priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
-    skuid $SINGBOX_UID return
+    skgid 0 return
     ip daddr @fake_ipv4 meta mark set 1 accept
     ip6 daddr @fake_ipv6 meta mark set 1 accept
     ip daddr @telegram_ipv4 meta mark set 1 accept
@@ -418,12 +544,20 @@ EOF
   esac
 fi
 
-if command -v systemctl >/dev/null 2>&1; then
+if command -v systemctl &>/dev/null; then
   echo "检查并启用 nftables 服务自启..."
-  if ! systemctl is-enabled nftables >/dev/null 2>&1; then systemctl enable nftables; echo "已设置 nftables 为开机自启。"; else echo "nftables 已经设置为开机自启。"; fi
-  echo "正在重启 nftables 服务..."; systemctl restart nftables
+  if ! systemctl is-enabled nftables &>/dev/null; then
+    systemctl enable nftables
+    echo "已设置 nftables 为开机自启。"
+  else
+    echo "nftables 已经设置为开机自启。"
+  fi
+
+  echo "正在重启 nftables 服务..."
+  systemctl restart nftables
 else
-  echo "加载新配置..."; nft -f "$TARGET_CONF"
+  echo "加载新配置..."
+  nft -f "$TARGET_CONF"
 fi
 
 echo "操作完成。"
