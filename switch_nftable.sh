@@ -159,7 +159,7 @@ chain tproxy-mark {
     ip6 daddr @china_dns_ipv6 return
     udp dport {123} return
     meta mark set 1
-    meta l4proto udp ct mark set 1
+    meta l4proto udp ct mark set 1  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
 }
 
 chain tproxy-prerouting {
@@ -173,7 +173,7 @@ chain tproxy-prerouting {
 chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != udp return
-    meta skgid $SINGBOX_GID return
+    meta skgid $SINGBOX_GID return  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
     ct direction reply return
     ct direction original ct mark 1 meta mark set 1 return
     ct direction original goto tproxy-mark
@@ -245,7 +245,7 @@ chain tproxy-mark {
     ip6 daddr @china_dns_ipv6 return
     udp dport {123} return
     meta mark set 1
-    meta l4proto udp ct mark set 1
+    meta l4proto udp ct mark set 1  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
 }
 
 chain tproxy-prerouting {
@@ -259,7 +259,7 @@ chain tproxy-prerouting {
 chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
-    meta skgid $SINGBOX_GID return
+    meta skgid $SINGBOX_GID return  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
     ct direction reply return
     meta l4proto udp ct direction original ct mark 1 meta mark set 1 return
     meta l4proto tcp ct state new ct direction original goto tproxy-mark
@@ -385,7 +385,7 @@ chain tproxy-prerouting {
 chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != udp return
-    meta skgid $SINGBOX_GID return
+    meta skgid $SINGBOX_GID return  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
     ct direction reply return
     ct direction original ct mark 1 meta mark set 1 return
     ip protocol udp ip daddr @fake_ipv4 meta mark set 1 ct mark set 1 return
@@ -470,7 +470,7 @@ chain tproxy-prerouting {
 chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
-    meta skgid $SINGBOX_GID return
+    meta skgid $SINGBOX_GID return  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
     ct direction reply return
     ct direction original ct mark 1 meta mark set 1 return
     ip daddr @fake_ipv4 meta mark set 1 ct mark set 1 return
