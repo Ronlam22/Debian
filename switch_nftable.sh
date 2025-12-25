@@ -66,6 +66,11 @@ echo "  fake_ipv4     : $FAKE_IPV4_CIDR"
 echo "  fake_ipv6     : $FAKE_IPV6_CIDR"
 echo
 
+SINGBOX_GID="$(ps -o gid= -C sing-box 2>/dev/null | head -n1 | tr -d ' ')"
+[[ -z "$SINGBOX_GID" ]] && \
+SINGBOX_GID="$(ps -o gid= -C singbox 2>/dev/null | head -n1 | tr -d ' ')"
+[[ -z "$SINGBOX_GID" ]] && SINGBOX_GID=0
+
 if [[ "$MODE" == "global" ]]; then
   # 全局模式(Global Mode)
   case "$IMPL" in
@@ -168,6 +173,7 @@ chain tproxy-prerouting {
 chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != udp return
+    meta skgid $SINGBOX_GID return
     ct direction reply return
     ct direction original ct mark 1 meta mark set 1 return
     ct direction original goto tproxy-mark
@@ -253,6 +259,7 @@ chain tproxy-prerouting {
 chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
+    meta skgid $SINGBOX_GID return
     ct direction reply return
     meta l4proto udp ct direction original ct mark 1 meta mark set 1 return
     meta l4proto tcp ct state new ct direction original goto tproxy-mark
@@ -378,6 +385,7 @@ chain tproxy-prerouting {
 chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != udp return
+    meta skgid $SINGBOX_GID return
     ct direction reply return
     ct direction original ct mark 1 meta mark set 1 return
     ip protocol udp ip daddr @fake_ipv4 meta mark set 1 ct mark set 1 return
@@ -462,6 +470,7 @@ chain tproxy-prerouting {
 chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
+    meta skgid $SINGBOX_GID return
     ct direction reply return
     ct direction original ct mark 1 meta mark set 1 return
     ip daddr @fake_ipv4 meta mark set 1 ct mark set 1 return
