@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-clear_screen(){
-  command -v tput >/dev/null 2>&1 && tput clear || printf "c"
-}
-
-pause(){
-  echo
-  read -r -e -p "按回车继续..." _ || true
-}
+clear_screen(){ command -v tput >/dev/null 2>&1 && tput clear || printf "\033c"; }
+pause(){ echo; read -r -e -p "按回车继续..." _ || true; }
+trim(){ awk '{$1=$1};1' <<<"${1:-}"; }
 
 if [[ ${EUID:-$(id -u)} -ne 0 ]]; then echo " 请用 root 执行：sudo $0"; exit 1; fi
 if [[ -t 0 ]]; then stty sane 2>/dev/null || true; stty erase '^?' 2>/dev/null || stty erase '^H' 2>/dev/null || true; fi
@@ -17,8 +12,6 @@ NFT_CONF="/etc/nftables.conf"
 PORTSYNC_SCRIPT="/usr/local/sbin/nftables-port-sync.sh"
 DEFAULTS_FILE="/etc/default/nftables-port-sync"
 SVC_FILE="/etc/systemd/system/nftables-port-sync.service"
-
-trim(){ awk '{$1=$1};1' <<<"${1:-}"; }
 
 normalize_ports(){
   local raw p; local out=()
@@ -32,10 +25,7 @@ normalize_ports(){
   printf "%s\n" "${out[@]}" | sort -n -u | paste -sd, -
 }
 
-ports_union_csv(){
-  local a="${1:-}" b="${2:-}"
-  echo "${a},${b}" | tr ',' '\n' | awk 'NF' | sort -n -u | paste -sd, -
-}
+ports_union_csv(){ local a="${1:-}" b="${2:-}"; echo "${a},${b}" | tr ',' '\n' | awk 'NF' | sort -n -u | paste -sd, -; }
 
 ports_minus_csv(){
   local base="${1:-}" rm="${2:-}"
@@ -98,9 +88,7 @@ scan_proc_ports_tab(){
     if (p=="" || port=="") next
     ports[p]=ports[p] (ports[p] ? "," : "") port
     procs[p]=1
-  } END{
-    for (p in procs) print p "\t" ports[p]
-  }'
+  } END{ for (p in procs) print p "\t" ports[p] }'
 }
 
 restore_or_remove_nft_conf(){
@@ -118,20 +106,13 @@ EOF
 
 write_nft_conf_dynamic(){
   local ssh_ports="$1" allow_ping="$2" open_ports="$3"; shift 3; local lines=("$@")
-
   cat >"$NFT_CONF" <<EOF
 #!/usr/sbin/nft -f
 
 table inet filter {
   set ssh_ports  { type inet_service; elements = { ${ssh_ports} } }
 EOF
-
-  if [[ -n "${open_ports//[[:space:]]/}" ]]; then
-    echo "  set open_port  { type inet_service; elements = { ${open_ports} } }" >>"$NFT_CONF"
-  else
-    echo "  set open_port  { type inet_service; }" >>"$NFT_CONF"
-  fi
-
+  if [[ -n "${open_ports//[[:space:]]/}" ]]; then echo "  set open_port  { type inet_service; elements = { ${open_ports} } }" >>"$NFT_CONF"; else echo "  set open_port  { type inet_service; }" >>"$NFT_CONF"; fi
   local line proc ports p_s setname
   for line in "${lines[@]}"; do
     proc="${line%%$'\t'*}"; ports="${line#*$'\t'}"
@@ -139,7 +120,6 @@ EOF
     p_s="$(sanitize_proc "$proc")"; setname="listen_${p_s}_ports"
     echo "  set ${setname} { type inet_service; elements = { ${ports} } }" >>"$NFT_CONF"
   done
-
   cat >>"$NFT_CONF" <<'EOF'
 
   chain input {
@@ -157,7 +137,6 @@ EOF
       destination-unreachable
     } accept
 EOF
-
   if [[ "$allow_ping" == "yes" ]]; then
     cat >>"$NFT_CONF" <<'EOF'
 
@@ -171,7 +150,6 @@ EOF
     icmpv6 type echo-request drop
 EOF
   fi
-
   cat >>"$NFT_CONF" <<'EOF'
 
     tcp dport @ssh_ports ct state new limit rate 20/minute accept
@@ -179,7 +157,6 @@ EOF
 
     meta l4proto { tcp, udp, sctp, dccp } th dport @open_port accept
 EOF
-
   for line in "${lines[@]}"; do
     proc="${line%%$'\t'*}"; ports="${line#*$'\t'}"
     [[ -z "${proc// /}" || -z "${ports// /}" ]] && continue
@@ -189,7 +166,6 @@ EOF
     meta l4proto { tcp, udp, sctp, dccp } th dport @${setname} accept
 EOF
   done
-
   cat >>"$NFT_CONF" <<'EOF'
   }
 
@@ -406,10 +382,7 @@ EOF
 }
 
 apply_portsync_now(){
-  if [[ ! -x "$PORTSYNC_SCRIPT" ]]; then
-    echo " 未检测到 $PORTSYNC_SCRIPT（请先运行“安装/更新”）。"
-    return 1
-  fi
+  if [[ ! -x "$PORTSYNC_SCRIPT" ]]; then echo " 未检测到 $PORTSYNC_SCRIPT（请先运行“安装/更新”）。"; return 1; fi
   "$PORTSYNC_SCRIPT"
 }
 
@@ -439,8 +412,7 @@ ports_manage_add(){
   echo; echo "当前放行端口：${OPEN_PORTS:-<空>}"
   local in_open add_ports merged
   read -r -e -p "请输入要新增放行的端口（空格/逗号分隔；留空取消）: " in_open || true
-  in_open="$(trim "${in_open:-}")"
-  [[ -z "$in_open" ]] && { echo " 已取消。"; return 0; }
+  in_open="$(trim "${in_open:-}")"; [[ -z "$in_open" ]] && { echo " 已取消。"; return 0; }
   add_ports="$(normalize_ports "$in_open")"
   merged="$(ports_union_csv "${OPEN_PORTS}" "${add_ports}")"
   write_defaults_only_open_ports "$merged"
@@ -454,8 +426,7 @@ ports_manage_del(){
   [[ -z "${OPEN_PORTS// /}" ]] && { echo " 放行端口为空，无需删除。"; return 0; }
   local in_rm rm_ports after
   read -r -e -p "请输入要删除的端口（空格/逗号分隔；留空取消）: " in_rm || true
-  in_rm="$(trim "${in_rm:-}")"
-  [[ -z "$in_rm" ]] && { echo " 已取消。"; return 0; }
+  in_rm="$(trim "${in_rm:-}")"; [[ -z "$in_rm" ]] && { echo " 已取消。"; return 0; }
   rm_ports="$(normalize_ports "$in_rm")"
   after="$(ports_minus_csv "${OPEN_PORTS}" "${rm_ports}")"
   write_defaults_only_open_ports "$after"
@@ -465,18 +436,11 @@ ports_manage_del(){
 
 ports_manage_view(){
   read_defaults_safe
-
   local ssh_show=""
-  if [[ -n "${SSH_PORTS_OVERRIDE:-}" ]]; then
-    ssh_show="$(trim "${SSH_PORTS_OVERRIDE}")"
-  else
-    ssh_show="$(guess_ssh_ports)"
-  fi
+  if [[ -n "${SSH_PORTS_OVERRIDE:-}" ]]; then ssh_show="$(trim "${SSH_PORTS_OVERRIDE}")"; else ssh_show="$(guess_ssh_ports)"; fi
   ssh_show="$(normalize_ports "$ssh_show" || true)"
-
   local open_show=""
-  open_show="$(trim "${OPEN_PORTS:-}")"
-  [[ -n "${open_show// /}" ]] && open_show="$(normalize_ports "$open_show" || true)"
+  open_show="$(trim "${OPEN_PORTS:-}")"; [[ -n "${open_show// /}" ]] && open_show="$(normalize_ports "$open_show" || true)"
 
   echo
   echo "============= 端口查看 ============="
@@ -487,34 +451,22 @@ ports_manage_view(){
 
   declare -A MAP=()
   local p csv
-  while IFS=$'\t' read -r p csv; do
-    p="$(trim "${p//\"/}")"
-    [[ -z "$p" ]] && continue
-    MAP["$p"]="$(normalize_ports "$csv" || true)"
-  done < <(scan_proc_ports_tab)
+  while IFS=$'\t' read -r p csv; do p="$(trim "${p//\"/}")"; [[ -z "$p" ]] && continue; MAP["$p"]="$(normalize_ports "$csv" || true)"; done < <(scan_proc_ports_tab)
 
   echo "============= 进程端口 ============="
   if [[ -n "${ALLOW_PROCS:-}" ]]; then
     for p in ${ALLOW_PROCS}; do
-      if [[ -n "${MAP[$p]:-}" ]]; then
-        echo " - ${p}: ${MAP[$p]}"
-      else
-        echo " - ${p}: <当前未监听>"
-      fi
+      if [[ -n "${MAP[$p]:-}" ]]; then echo " - ${p}: ${MAP[$p]}"; else echo " - ${p}: <当前未监听>"; fi
     done
   else
     echo " - <未配置 ALLOW_PROCS>"
   fi
   echo
 
-  local allow_all=""
-  allow_all="$(ports_union_csv "${ssh_show:-}" "${open_show:-}")"
+  local allow_all=""; allow_all="$(ports_union_csv "${ssh_show:-}" "${open_show:-}")"
   if [[ -n "${ALLOW_PROCS:-}" ]]; then
-    for p in ${ALLOW_PROCS}; do
-      allow_all="$(ports_union_csv "$allow_all" "${MAP[$p]:-}")"
-    done
+    for p in ${ALLOW_PROCS}; do allow_all="$(ports_union_csv "$allow_all" "${MAP[$p]:-}")"; done
   fi
-
   echo "============= 放行端口总览 ============="
   echo "${allow_all:-<空>}"
   echo
@@ -564,21 +516,19 @@ install_fw(){
   local in ports
   for proc in "${PROCS[@]}"; do
     [[ "$proc" == "sshd" || "$proc" == "(unknown)" ]] && continue
-    case "$proc" in
-      systemd-timesyncd|systemd-resolved|avahi-daemon|dhclient|NetworkManager) continue ;;
-    esac
+    case "$proc" in systemd-timesyncd|systemd-resolved|avahi-daemon|dhclient|NetworkManager) continue ;; esac
     csv="${PROC_DEF[$proc]}"; [[ -z "${csv// /}" ]] && continue
     echo "检测到 ${proc} 端口：${csv}"
     read -r -e -p "[默认: ${csv}]  回车继续: " _ || true
-ports="$(normalize_ports "$csv")"
-[[ -n "${ports// /}" ]] && ALLOW_MAP["$proc"]="$ports"
-echo
+    ports="$(normalize_ports "$csv")"
+    [[ -n "${ports// /}" ]] && ALLOW_MAP["$proc"]="$ports"
+    echo
   done
 
   local in_open open_ports=""
   read -r -e -p "请输入需要放行的端口（空格/逗号分隔；留空跳过）: " in_open || true
   in_open="$(trim "${in_open:-}")"
-  if [[ -n "$in_open" ]]; then open_ports="$(normalize_ports "$in_open")"; fi
+  [[ -n "$in_open" ]] && open_ports="$(normalize_ports "$in_open")"
   echo
 
   local in_ping allow_ping="yes"
@@ -625,13 +575,11 @@ uninstall_fw(){
   echo "  - 写回默认 nftables.conf 模板"
   echo "  - 关闭 nftables 服务并取消自启"
   echo
-
   read -r -e -p "确认卸载？输入 YES 继续：" confirm || true
   confirm="$(trim "${confirm:-}")"; [[ "$confirm" != "YES" ]] && { echo " 已取消卸载。"; return 0; }
 
   systemctl stop nftables-port-sync.service 2>/dev/null || true
   systemctl disable nftables-port-sync.service 2>/dev/null || true
-
   rm -f "$SVC_FILE" "$DEFAULTS_FILE" "$PORTSYNC_SCRIPT" 2>/dev/null || true
 
   restore_or_remove_nft_conf
