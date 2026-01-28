@@ -1,4 +1,4 @@
-auto-update.sh  自动更新最新版本
+auto-update.sh  自动更新最新版本脚本
 
 caddy-manager.sh  Caddy安装卸载脚本
 
