@@ -51,8 +51,8 @@ info "CPU 支持：x86-64-v${ABI_VER}"
 case "$ABI_VER" in
   3|4) XAN_PKG="linux-xanmod-x64v3" ;;
   2)   XAN_PKG="linux-xanmod-x64v2" ;;
-  1)   err "检测到 x86-64-v1：CPU 不支持 XanMod v2/v3 内核。"; exit 1 ;;
-  *)   err "未知或不受支持的 psABI 等级：x86-64-v${ABI_VER}"; exit 1 ;;
+  1)   warn "检测到 x86-64-v1：MAIN 不提供 v1，改装 XanMod LTS x64v1。"; XAN_PKG="linux-xanmod-lts-x64v1" ;;
+  *)   warn "无法识别 psABI：改装 XanMod LTS x64v1 兜底。"; XAN_PKG="linux-xanmod-lts-x64v1" ;;
 esac
 info "将安装：${XAN_PKG}"
 
