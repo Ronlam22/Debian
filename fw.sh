@@ -123,6 +123,8 @@ EOF
   cat >>"$NFT_CONF" <<'EOF'
   set blacklist_v4 { type ipv4_addr; flags dynamic,timeout; }
   set blacklist_v6 { type ipv6_addr; flags dynamic,timeout; }
+  set local_ipv4 { type ipv4_addr; flags interval; elements = { 0.0.0.0/8, 10.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4 }; }
+  set local_ipv6 { type ipv6_addr; flags interval; elements = { ::1, ::ffff:0.0.0.0/96, 64:ff9b::/96, 100::/64, 2001:10::/28, 2001:20::/28, 2001:db8::/32, 2002::/16, fe80::/10, fc00::/7 }; }
 EOF
 
   local line proc ports p_s setname
@@ -138,11 +140,12 @@ EOF
   chain input {
     type filter hook input priority 0;
     policy drop;
-    ip  saddr != 0.0.0.0 ip saddr != 127.0.0.0/8 ip  saddr @blacklist_v4 counter drop comment "BL_DROP_V4"
-    ip6 saddr != ::1 ip6 saddr != fe80::/10 ip6 saddr != fc00::/7 ip6 saddr @blacklist_v6 counter drop comment "BL_DROP_V6"
+    ip  saddr @local_ipv4 accept comment "LOCAL_V4"
+    ip6 saddr @local_ipv6 accept comment "LOCAL_V6"
+    ip  saddr @blacklist_v4 counter drop comment "BL_DROP_V4"
+    ip6 saddr @blacklist_v6 counter drop comment "BL_DROP_V6"
     iif lo accept
     ct state established,related accept
-
     ip6 nexthdr icmpv6 icmpv6 type {
       nd-router-solicit, nd-router-advert,
       nd-neighbor-solicit, nd-neighbor-advert,
@@ -150,50 +153,39 @@ EOF
       packet-too-big, time-exceeded, parameter-problem,
       destination-unreachable
     } accept
-
 EOF
-
   if [[ "$allow_ping" == "yes" ]]; then
     cat >>"$NFT_CONF" <<'EOF'
-
     icmp type echo-request accept
     icmpv6 type echo-request accept
 EOF
   else
     cat >>"$NFT_CONF" <<EOF
-    ip saddr != 0.0.0.0 ip saddr != 127.0.0.0/8 icmp  type echo-request counter add @blacklist_v4 { ip  saddr timeout ${BL_ICMP_TIMEOUT} } drop comment "BL_ICMP_V4"
-    ip6 saddr != ::1 ip6 saddr != fe80::/10 ip6 saddr != fc00::/7 icmpv6 type echo-request counter add @blacklist_v6 { ip6 saddr timeout ${BL_ICMP_TIMEOUT} } drop comment "BL_ICMP_V6"
+    ip saddr != @local_ipv4 icmp  type echo-request counter add @blacklist_v4 { ip  saddr timeout ${BL_ICMP_TIMEOUT} } drop comment "BL_ICMP_V4"
+    ip6 saddr != @local_ipv6 icmpv6 type echo-request counter add @blacklist_v6 { ip6 saddr timeout ${BL_ICMP_TIMEOUT} } drop comment "BL_ICMP_V6"
 EOF
   fi
-
   cat >>"$NFT_CONF" <<'EOF'
-
     tcp dport @ssh_ports ct state new limit rate 20/minute accept
     tcp dport @ssh_ports drop
-
     meta l4proto { tcp, udp, sctp, dccp } th dport @open_port accept
 EOF
-
   for line in "${lines[@]}"; do
     proc="${line%%$'\t'*}"; ports="${line#*$'\t'}"
     [[ -z "${proc// /}" || -z "${ports// /}" ]] && continue
     p_s="$(sanitize_proc "$proc")"; setname="listen_${p_s}_ports"
     cat >>"$NFT_CONF" <<EOF
-
     meta l4proto { tcp, udp, sctp, dccp } th dport @${setname} accept
 EOF
   done
-
   cat >>"$NFT_CONF" <<EOF
-    ip saddr != 0.0.0.0 ip saddr != 127.0.0.0/8 tcp flags syn ct state new limit rate over ${BL_TCP_SYN_RATE} counter add @blacklist_v4 { ip saddr timeout ${BL_TCP_TIMEOUT} } comment "BL_SYN_V4"
-    ip6 saddr != ::1 ip6 saddr != fe80::/10 ip6 saddr != fc00::/7 tcp flags syn ct state new limit rate over ${BL_TCP_SYN_RATE} counter add @blacklist_v6 { ip6 saddr timeout ${BL_TCP_TIMEOUT} } comment "BL_SYN_V6"
-    ip saddr != 0.0.0.0 ip saddr != 127.0.0.0/8 meta l4proto udp ct state new limit rate over ${BL_UDP_NEW_RATE} counter add @blacklist_v4 { ip saddr timeout ${BL_UDP_TIMEOUT} } comment "BL_UDP_V4"
-    ip6 saddr != ::1 ip6 saddr != fe80::/10 ip6 saddr != fc00::/7 meta l4proto udp ct state new limit rate over ${BL_UDP_NEW_RATE} counter add @blacklist_v6 { ip6 saddr timeout ${BL_UDP_TIMEOUT} } comment "BL_UDP_V6"
+    ip  saddr != @local_ipv4 tcp flags syn ct state new limit rate over ${BL_TCP_SYN_RATE} counter add @blacklist_v4 { ip  saddr timeout ${BL_TCP_TIMEOUT} } comment "BL_SYN_V4"
+    ip6 saddr != @local_ipv6 tcp flags syn ct state new limit rate over ${BL_TCP_SYN_RATE} counter add @blacklist_v6 { ip6 saddr timeout ${BL_TCP_TIMEOUT} } comment "BL_SYN_V6"
+    ip  saddr != @local_ipv4 meta l4proto udp ct state new limit rate over ${BL_UDP_NEW_RATE} counter add @blacklist_v4 { ip  saddr timeout ${BL_UDP_TIMEOUT} } comment "BL_UDP_V4"
+    ip6 saddr != @local_ipv6 meta l4proto udp ct state new limit rate over ${BL_UDP_NEW_RATE} counter add @blacklist_v6 { ip6 saddr timeout ${BL_UDP_TIMEOUT} } comment "BL_UDP_V6"
 EOF
-
   cat >>"$NFT_CONF" <<'EOF'
   }
-
   chain forward {
     type filter hook forward priority 0;
     policy drop;
@@ -205,7 +197,6 @@ EOF
     iifname "br-*" accept
     oifname "br-*" accept
   }
-
   chain output {
     type filter hook output priority 0;
     policy accept;
@@ -340,6 +331,8 @@ fi
 cat >>"\$tmp" <<'EOF2'
   set blacklist_v4 { type ipv4_addr; flags dynamic,timeout; }
   set blacklist_v6 { type ipv6_addr; flags dynamic,timeout; }
+  set local_ipv4 { type ipv4_addr; flags interval; elements = { 0.0.0.0/8, 10.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4 }; }
+  set local_ipv6 { type ipv6_addr; flags interval; elements = { ::1, ::ffff:0.0.0.0/96, 64:ff9b::/96, 100::/64, 2001:10::/28, 2001:20::/28, 2001:db8::/32, 2002::/16, fe80::/10, fc00::/7 }; }
 EOF2
 
 for line in "\${allow_lines[@]}"; do
@@ -356,11 +349,12 @@ cat >>"\$tmp" <<EOF2
   chain input {
     type filter hook input priority 0;
     policy drop;
-    ip  saddr != 0.0.0.0 ip saddr != 127.0.0.0/8 ip  saddr @blacklist_v4 counter drop comment "BL_DROP_V4"
-    ip6 saddr != ::1 ip6 saddr != fe80::/10 ip6 saddr != fc00::/7 ip6 saddr @blacklist_v6 counter drop comment "BL_DROP_V6"
+    ip  saddr @local_ipv4 accept comment "LOCAL_V4"
+    ip6 saddr @local_ipv6 accept comment "LOCAL_V6"
+    ip  saddr @blacklist_v4 counter drop comment "BL_DROP_V4"
+    ip6 saddr @blacklist_v6 counter drop comment "BL_DROP_V6"
     iif lo accept
     ct state established,related accept
-
     ip6 nexthdr icmpv6 icmpv6 type {
       nd-router-solicit, nd-router-advert,
       nd-neighbor-solicit, nd-neighbor-advert,
@@ -368,31 +362,23 @@ cat >>"\$tmp" <<EOF2
       packet-too-big, time-exceeded, parameter-problem,
       destination-unreachable
     } accept
-
 EOF2
-
 if [[ "\$ALLOW_PING" == "yes" ]]; then
   cat >>"\$tmp" <<'EOF2'
-
     icmp type echo-request accept
     icmpv6 type echo-request accept
 EOF2
 else
   cat >>"\$tmp" <<EOF2
-
-    ip saddr != 0.0.0.0 ip saddr != 127.0.0.0/8 icmp  type echo-request add @blacklist_v4 { ip  saddr timeout \${BL_ICMP_TIMEOUT} } drop
-    ip6 saddr != ::1 ip6 saddr != fe80::/10 ip6 saddr != fc00::/7 icmpv6 type echo-request add @blacklist_v6 { ip6 saddr timeout \${BL_ICMP_TIMEOUT} } drop
+    ip saddr != @local_ipv4 icmp  type echo-request add @blacklist_v4 { ip  saddr timeout ${BL_ICMP_TIMEOUT} } drop
+    ip6 saddr != @local_ipv6 icmpv6 type echo-request add @blacklist_v6 { ip6 saddr timeout ${BL_ICMP_TIMEOUT} } drop
 EOF2
 fi
-
 cat >>"\$tmp" <<'EOF2'
-
     tcp dport @ssh_ports ct state new limit rate 20/minute accept
     tcp dport @ssh_ports drop
-
     meta l4proto { tcp, udp, sctp, dccp } th dport @open_port accept
 EOF2
-
 for line in "\${allow_lines[@]}"; do
   proc="\${line%%\$'\\t'*}"
   ports="\${line#*\$'\\t'}"
@@ -400,23 +386,17 @@ for line in "\${allow_lines[@]}"; do
   p_s="\$(sanitize_proc "\$proc")"
   setname="listen_\${p_s}_ports"
   cat >>"\$tmp" <<EOF2
-
     meta l4proto { tcp, udp, sctp, dccp } th dport @\${setname} accept
 EOF2
 done
-
 cat >>"\$tmp" <<EOF2
-
-    ip saddr != 0.0.0.0 ip saddr != 127.0.0.0/8 tcp flags syn ct state new limit rate over \${BL_TCP_SYN_RATE} add @blacklist_v4 { ip saddr timeout \${BL_TCP_TIMEOUT} }
-    ip6 saddr != ::1 ip6 saddr != fe80::/10 ip6 saddr != fc00::/7 tcp flags syn ct state new limit rate over \${BL_TCP_SYN_RATE} add @blacklist_v6 { ip6 saddr timeout \${BL_TCP_TIMEOUT} }
-
-    ip saddr != 0.0.0.0 ip saddr != 127.0.0.0/8 meta l4proto udp ct state new limit rate over \${BL_UDP_NEW_RATE} add @blacklist_v4 { ip saddr timeout \${BL_UDP_TIMEOUT} }
-    ip6 saddr != ::1 ip6 saddr != fe80::/10 ip6 saddr != fc00::/7 meta l4proto udp ct state new limit rate over \${BL_UDP_NEW_RATE} add @blacklist_v6 { ip6 saddr timeout \${BL_UDP_TIMEOUT} }
+    ip saddr != @local_ipv4 tcp flags syn ct state new limit rate over ${BL_TCP_SYN_RATE} add @blacklist_v4 { ip saddr timeout ${BL_TCP_TIMEOUT} }
+    ip6 saddr != @local_ipv6 tcp flags syn ct state new limit rate over ${BL_TCP_SYN_RATE} add @blacklist_v6 { ip6 saddr timeout ${BL_TCP_TIMEOUT} }
+    ip saddr != @local_ipv4 meta l4proto udp ct state new limit rate over ${BL_UDP_NEW_RATE} add @blacklist_v4 { ip saddr timeout ${BL_UDP_TIMEOUT} }
+    ip6 saddr != @local_ipv6 meta l4proto udp ct state new limit rate over ${BL_UDP_NEW_RATE} add @blacklist_v6 { ip6 saddr timeout ${BL_UDP_TIMEOUT} }
 EOF2
-
 cat >>"\$tmp" <<'EOF2'
   }
-
   chain forward {
     type filter hook forward priority 0;
     policy drop;
@@ -740,8 +720,8 @@ show_block_stats(){
   local v4_lines v6_lines
   v4_lines="$(nft_dump_set_elements inet filter blacklist_v4 || true)"
   v6_lines="$(nft_dump_set_elements inet filter blacklist_v6 || true)"
-  v4_lines="$(printf '%s\n' "$v4_lines" | grep -Ev '^(0\.0\.0\.0|127\.)' || true)"
-  v6_lines="$(printf '%s\n' "$v6_lines" | grep -Ev '^(::1|fe80:)' || true)"
+  v4_lines="$(printf '%s\n' "$v4_lines" | grep -Ev '^(0\.0\.0\.0|127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|169\.254\.|22[4-9]\.|23[0-9]\.|24[0-9]\.|25[0-5]\.|2[4-5][0-9]\.|2[6-9][0-9]\.|27[0-9]\.|28[0-9]\.|29[0-9]\.|3[0-9][0-9]\.|4[0-9][0-9]\.|5[0-9][0-9]\.|6[0-9][0-9]\.|7[0-9][0-9]\.|8[0-9][0-9]\.|9[0-9][0-9])' || true)"
+  v6_lines="$(printf '%s\n' "$v6_lines" | grep -Eiv '^(::1$|fe80:|fc|fd|::ffff:|64:ff9b:|100:|2001:db8:|2002:)' || true)"
   echo
   echo "---------  IPv4 黑名单（含剩余时间） --------"
   if [[ -n "${v4_lines//[[:space:]]/}" ]]; then
