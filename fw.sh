@@ -123,8 +123,8 @@ EOF
   cat >>"$NFT_CONF" <<'EOF'
   set blacklist_v4 { type ipv4_addr; flags dynamic,timeout; }
   set blacklist_v6 { type ipv6_addr; flags dynamic,timeout; }
-  set local_ipv4 { type ipv4_addr; flags interval; elements = { 127.0.0.0/8 }; }
-  set local_ipv6 { type ipv6_addr; flags interval; elements = { ::1, fe80::/10 }; }
+  set local_ipv4 { type ipv4_addr; flags interval; elements = { 0.0.0.0/8, 10.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4 }; }
+  set local_ipv6 { type ipv6_addr; flags interval; elements = { ::1, ::ffff:0.0.0.0/96, 2001:db8::/32, 2002::/16, fe80::/10, fc00::/7 }; }
 EOF
 
   local line proc ports p_s setname
@@ -327,8 +327,8 @@ fi
 cat >>"\$tmp" <<'EOF2'
   set blacklist_v4 { type ipv4_addr; flags dynamic,timeout; }
   set blacklist_v6 { type ipv6_addr; flags dynamic,timeout; }
-  set local_ipv4 { type ipv4_addr; flags interval; elements = { 127.0.0.0/8 }; }
-  set local_ipv6 { type ipv6_addr; flags interval; elements = { ::1, fe80::/10 }; }
+  set local_ipv4 { type ipv4_addr; flags interval; elements = { 0.0.0.0/8, 10.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4 }; }
+  set local_ipv6 { type ipv6_addr; flags interval; elements = { ::1, ::ffff:0.0.0.0/96, 2001:db8::/32, 2002::/16, fe80::/10, fc00::/7 }; }
 EOF2
 
 for line in "\${allow_lines[@]}"; do
@@ -743,12 +743,10 @@ show_block_stats(){
   echo
   echo "------------- Top 10 被拦截 IP --------------"
   if [[ -n "${v4_lines//[[:space:]]/}" ]]; then
-    printf '%s
-' "$v4_lines" | sed '/^$/d' | awk '{print $1}' | head -n 10 | nl -w2 -s'. '
+    printf '%s' "$v4_lines" | sed '/^$/d' | awk '{print $1}' | head -n 10 | nl -w2 -s'. '
   fi
   if [[ -n "${v6_lines//[[:space:]]/}" ]]; then
-    printf '%s
-' "$v6_lines" | sed '/^$/d' | awk '{print $1}' | head -n 10 | nl -w2 -s'. '
+    printf '%s' "$v6_lines" | sed '/^$/d' | awk '{print $1}' | head -n 10 | nl -w2 -s'. '
   fi
   echo
   echo "------------------ 触发统计 ------------------"
