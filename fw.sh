@@ -123,8 +123,8 @@ EOF
   cat >>"$NFT_CONF" <<'EOF'
   set blacklist_v4 { type ipv4_addr; flags dynamic,timeout; }
   set blacklist_v6 { type ipv6_addr; flags dynamic,timeout; }
-  set local_ipv4 { type ipv4_addr; flags interval; elements = { 0.0.0.0/8, 10.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4 }; }
-  set local_ipv6 { type ipv6_addr; flags interval; elements = { ::1, ::ffff:0.0.0.0/96, 64:ff9b::/96, 100::/64, 2001:10::/28, 2001:20::/28, 2001:db8::/32, 2002::/16, fe80::/10, fc00::/7 }; }
+  set local_ipv4 { type ipv4_addr; flags interval; elements = { 127.0.0.0/8 }; }
+  set local_ipv6 { type ipv6_addr; flags interval; elements = { ::1, fe80::/10 }; }
 EOF
 
   local line proc ports p_s setname
@@ -146,13 +146,7 @@ EOF
     ip6 saddr @blacklist_v6 counter drop comment "BL_DROP_V6"
     iif lo accept
     ct state established,related accept
-    ip6 nexthdr icmpv6 icmpv6 type {
-      nd-router-solicit, nd-router-advert,
-      nd-neighbor-solicit, nd-neighbor-advert,
-      nd-redirect,
-      packet-too-big, time-exceeded, parameter-problem,
-      destination-unreachable
-    } accept
+    ip6 nexthdr icmpv6 icmpv6 type { nd-router-solicit, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert, nd-redirect, packet-too-big, time-exceeded, parameter-problem, destination-unreachable } accept
 EOF
   if [[ "$allow_ping" == "yes" ]]; then
     cat >>"$NFT_CONF" <<'EOF'
@@ -167,6 +161,8 @@ EOF
   fi
   cat >>"$NFT_CONF" <<'EOF'
     tcp dport @ssh_ports ct state new limit rate 20/minute accept
+    ip  saddr != @local_ipv4 tcp dport @ssh_ports ct state new limit rate over 20/minute add @blacklist_v4 { ip saddr timeout 24h } drop
+    ip6 saddr != @local_ipv6 tcp dport @ssh_ports ct state new limit rate over 20/minute add @blacklist_v6 { ip6 saddr timeout 24h } drop
     tcp dport @ssh_ports drop
     meta l4proto { tcp, udp, sctp, dccp } th dport @open_port accept
 EOF
@@ -331,8 +327,8 @@ fi
 cat >>"\$tmp" <<'EOF2'
   set blacklist_v4 { type ipv4_addr; flags dynamic,timeout; }
   set blacklist_v6 { type ipv6_addr; flags dynamic,timeout; }
-  set local_ipv4 { type ipv4_addr; flags interval; elements = { 0.0.0.0/8, 10.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4, 240.0.0.0/4 }; }
-  set local_ipv6 { type ipv6_addr; flags interval; elements = { ::1, ::ffff:0.0.0.0/96, 64:ff9b::/96, 100::/64, 2001:10::/28, 2001:20::/28, 2001:db8::/32, 2002::/16, fe80::/10, fc00::/7 }; }
+  set local_ipv4 { type ipv4_addr; flags interval; elements = { 127.0.0.0/8 }; }
+  set local_ipv6 { type ipv6_addr; flags interval; elements = { ::1, fe80::/10 }; }
 EOF2
 
 for line in "\${allow_lines[@]}"; do
@@ -355,13 +351,7 @@ cat >>"\$tmp" <<EOF2
     ip6 saddr @blacklist_v6 counter drop comment "BL_DROP_V6"
     iif lo accept
     ct state established,related accept
-    ip6 nexthdr icmpv6 icmpv6 type {
-      nd-router-solicit, nd-router-advert,
-      nd-neighbor-solicit, nd-neighbor-advert,
-      nd-redirect,
-      packet-too-big, time-exceeded, parameter-problem,
-      destination-unreachable
-    } accept
+    ip6 nexthdr icmpv6 icmpv6 type { nd-router-solicit, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert, nd-redirect, packet-too-big, time-exceeded, parameter-problem, destination-unreachable } accept
 EOF2
 if [[ "\$ALLOW_PING" == "yes" ]]; then
   cat >>"\$tmp" <<'EOF2'
@@ -376,6 +366,8 @@ EOF2
 fi
 cat >>"\$tmp" <<'EOF2'
     tcp dport @ssh_ports ct state new limit rate 20/minute accept
+    ip  saddr != @local_ipv4 tcp dport @ssh_ports ct state new limit rate over 20/minute add @blacklist_v4 { ip saddr timeout 24h } drop
+    ip6 saddr != @local_ipv6 tcp dport @ssh_ports ct state new limit rate over 20/minute add @blacklist_v6 { ip6 saddr timeout 24h } drop
     tcp dport @ssh_ports drop
     meta l4proto { tcp, udp, sctp, dccp } th dport @open_port accept
 EOF2
