@@ -51,7 +51,7 @@ ports_minus_csv(){
 
 guess_ssh_ports(){
   local ports=""
-  ports="$(ss -lntpH 2>/dev/null | awk '$1=="LISTEN" && index($0, "users:((\"sshd\"")>0 { addr=$4; gsub(/.*:/,"",addr); if (addr ~ /^[0-9]+$/) print addr }' | sort -n -u | paste -sd, - || true)"
+  ports="$(ss -lntpH 2>/dev/null | awk '$1=="LISTEN" && index($0, "users:((\"sshd\"")>0 { addr=$4; if (match(addr, /:([0-9]+)$/, m)) print m[1] }' | sort -n -u | paste -sd, - || true)"
   if [[ -z "$ports" && -f /etc/ssh/sshd_config ]]; then ports="$(awk 'BEGIN{IGNORECASE=1} $1=="port"{print $2}' /etc/ssh/sshd_config 2>/dev/null | sort -n -u | paste -sd, - || true)"; fi
   [[ -z "$ports" ]] && ports="22"
   echo "$ports"
@@ -67,10 +67,10 @@ sanitize_proc(){
 
 scan_listen_ports(){
   echo "========== 扫描监听端口 =========="
-  ss -lntupH 2>/dev/null | awk '{ proto=$1; addr=$5; gsub(/.*:/,"",addr); if (addr !~ /^[0-9]+$/) next; proc="(unknown)"; pos=index($0,"users:((\""); if (pos>0){t=substr($0,pos+9); sub(/".*/,"",t); gsub(/"/,"",t); if(t!="") proc=t} printf "%-4s %-6s %s\n", proto, addr, proc }' | sort -k1,1 -k2,2n -k3,3
+  ss -lntupH 2>/dev/null | awk '{ proto=$1; addr=$5; if (!match(addr, /:([0-9]+)$/, m)) next; addr=m[1]; proc="(unknown)"; pos=index($0,"users:((\""); if (pos>0){t=substr($0,pos+9); sub(/".*/,"",t); gsub(/"/,"",t); if(t!="") proc=t} printf "%-4s %-6s %s\n", proto, addr, proc }' | sort -k1,1 -k2,2n -k3,3
   echo
   ss -lntupH 2>/dev/null | awk '{
-    proto=$1; addr=$5; gsub(/.*:/,"",addr); if (addr !~ /^[0-9]+$/) next
+    proto=$1; addr=$5; if (!match(addr, /:([0-9]+)$/, m)) next; addr=m[1]
     proc="(unknown)"; pos=index($0,"users:((\""); if (pos>0){t=substr($0,pos+9); sub(/".*/,"",t); gsub(/"/,"",t); if(t!="") proc=t}
     ports[proc, proto] = ports[proc, proto] (ports[proc, proto] ? "," : "") addr
     seen_proc[proc]=1; seen_proto[proc, proto]=1
@@ -86,7 +86,7 @@ scan_listen_ports(){
 
 scan_proc_ports_tab(){
   ss -lntupH 2>/dev/null | awk '{
-    addr=$5; gsub(/.*:/,"",addr); if (addr !~ /^[0-9]+$/) next
+    addr=$5; if (!match(addr, /:([0-9]+)$/, m)) next; addr=m[1]
     proc="(unknown)"; pos=index($0,"users:((\""); if (pos>0){t=substr($0,pos+9); sub(/".*/,"",t); gsub(/"/,"",t); if(t!="") proc=t}
     print proc "\t" addr
   }' | sort -u | awk -F'\t' '{
@@ -189,7 +189,6 @@ EOF
 
   cat >>"$NFT_CONF" <<EOF
 
-    # 仅对未命中放行规则的流量进行速率拉黑（避免误伤已放行端口）
     tcp flags syn ct state new limit rate over ${BL_TCP_SYN_RATE} counter add @blacklist_v4 { ip saddr timeout ${BL_TCP_TIMEOUT} } comment "BL_SYN_V4"
     tcp flags syn ct state new limit rate over ${BL_TCP_SYN_RATE} counter add @blacklist_v6 { ip6 saddr timeout ${BL_TCP_TIMEOUT} } comment "BL_SYN_V6"
 
@@ -249,7 +248,7 @@ sanitize_proc() {
 
 guess_ssh_ports() {
   local ports=""
-  ports="\$(ss -lntpH 2>/dev/null | awk '/sshd/ {addr=\$4; gsub(/.*:/,"",addr); if(addr~/^[0-9]+$/) print addr}'     | sort -n -u | paste -sd, - || true)"
+  ports="\$(ss -lntpH 2>/dev/null | awk '/sshd/ {addr=\$4; if (match(addr, /:([0-9]+)$/, m)) print m[1]}'     | sort -n -u | paste -sd, - || true)"
   [[ -z "\$ports" && -f /etc/ssh/sshd_config ]] && ports="\$(awk 'BEGIN{IGNORECASE=1} \$1=="port"{print \$2}' /etc/ssh/sshd_config 2>/dev/null     | sort -n -u | paste -sd, - || true)"
   [[ -z "\$ports" ]] && ports="22"
   echo "\$ports"
@@ -257,7 +256,7 @@ guess_ssh_ports() {
 
 scan_proc_ports_tab() {
   ss -lntupH 2>/dev/null | awk '{
-    addr=\$5; gsub(/.*:/,"",addr); if (addr !~ /^[0-9]+$/) next
+    addr=\$5; if (!match(addr, /:([0-9]+)$/, m)) next; addr=m[1]
     proc="(unknown)"; pos=index(\$0,"users:((\\""); if (pos>0){t=substr(\$0,pos+9); sub(/".*/,"",t); gsub(/"/,"",t); if(t!="") proc=t}
     print proc "\\t" addr
   }' | sort -u | awk -F'\\t' '{
@@ -415,7 +414,6 @@ done
 
 cat >>"\$tmp" <<EOF2
 
-    # 仅对未命中放行规则的流量进行速率拉黑（避免误伤已放行端口）
     tcp flags syn ct state new limit rate over \${BL_TCP_SYN_RATE} add @blacklist_v4 { ip saddr timeout \${BL_TCP_TIMEOUT} }
     tcp flags syn ct state new limit rate over \${BL_TCP_SYN_RATE} add @blacklist_v6 { ip6 saddr timeout \${BL_TCP_TIMEOUT} }
 
