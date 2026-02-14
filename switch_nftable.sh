@@ -147,6 +147,7 @@ chain tproxy-proxy {
     ip daddr @china_dns_ipv4 return
     ip6 daddr @china_dns_ipv6 return
     udp dport {123} return
+    udp dport 443 reject
     ip protocol udp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
     ip6 nexthdr udp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
 }
@@ -158,6 +159,7 @@ chain tproxy-mark {
     ip daddr @china_dns_ipv4 return
     ip6 daddr @china_dns_ipv6 return
     udp dport {123} return
+    udp dport 443 reject
     meta mark set 1
     meta l4proto udp ct mark set 1  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
 }
@@ -174,6 +176,7 @@ chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != udp return
     meta skgid $SINGBOX_GID return  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
+    udp dport 443 reject
     ct direction reply return
     ct direction original ct mark 1 meta mark set 1 return
     ct direction original goto tproxy-mark
@@ -231,6 +234,7 @@ chain tproxy-proxy {
     ip daddr @china_dns_ipv4 return
     ip6 daddr @china_dns_ipv6 return
     udp dport {123} return
+    udp dport 443 reject
     ip protocol tcp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
     ip6 nexthdr tcp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
     ip protocol udp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
@@ -244,6 +248,7 @@ chain tproxy-mark {
     ip daddr @china_dns_ipv4 return
     ip6 daddr @china_dns_ipv6 return
     udp dport {123} return
+    udp dport 443 reject
     meta mark set 1
     meta l4proto udp ct mark set 1  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
 }
@@ -260,6 +265,7 @@ chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
     meta skgid $SINGBOX_GID return  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
+    udp dport 443 reject
     ct direction reply return
     meta l4proto udp ct direction original ct mark 1 meta mark set 1 return
     meta l4proto tcp ct state new ct direction original goto tproxy-mark
@@ -366,6 +372,7 @@ chain tproxy-proxy {
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
+    udp dport 443 reject
     ip protocol udp ip daddr @fake_ipv4 meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
     ip6 nexthdr udp ip6 daddr @fake_ipv6 meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
     ip protocol udp ip daddr @telegram_ipv4 meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
@@ -386,6 +393,7 @@ chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != udp return
     meta skgid $SINGBOX_GID return  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
+    udp dport 443 reject
     ct direction reply return
     ct direction original ct mark 1 meta mark set 1 return
     ip protocol udp ip daddr @fake_ipv4 meta mark set 1 ct mark set 1 return
@@ -445,6 +453,7 @@ set fake_ipv6 {
 
 chain tproxy-proxy {
     fib daddr type { unspec, local, anycast, multicast } return
+    udp dport 443 reject
     ip daddr @fake_ipv4 ip protocol tcp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
     ip daddr @fake_ipv4 ip protocol udp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
     ip6 daddr @fake_ipv6 ip6 nexthdr tcp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
@@ -471,6 +480,7 @@ chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
     meta skgid $SINGBOX_GID return  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
+    udp dport 443 reject
     ct direction reply return
     ct direction original ct mark 1 meta mark set 1 return
     ip daddr @fake_ipv4 meta mark set 1 ct mark set 1 return
