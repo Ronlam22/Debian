@@ -14,6 +14,29 @@ read_line(){
 
 require_root(){ if [ "$(id -u)" -ne 0 ]; then echo "请用 root 运行此脚本（sudo $0）" >&2; exit 1; fi; }
 
+disable_sleep(){
+  command -v systemctl >/dev/null 2>&1 || return 0
+  systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target systemd-sleep.service systemd-suspend.service systemd-hibernate.service systemd-hybrid-sleep.service >/dev/null 2>&1 || true
+  systemctl daemon-reload >/dev/null 2>&1 || true
+}
+
+setup_time_sync(){
+  command -v systemctl >/dev/null 2>&1 || return 0
+  command -v timedatectl >/dev/null 2>&1 || return 0
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq || true
+  apt-get install -y bash-completion sudo curl traceroute wget bash unzip systemd-timesyncd >/dev/null 2>&1 || true
+  local CONF_FILE="/etc/systemd/timesyncd.conf" NTP_LINE="NTP=pool.ntp.org cn.pool.ntp.org ntp1.aliyun.com time1.cloud.tencent.com"
+  systemctl enable systemd-timesyncd >/dev/null 2>&1 || true
+  [ -f "$CONF_FILE" ] || { [ -f /usr/lib/systemd/timesyncd.conf ] && cp /usr/lib/systemd/timesyncd.conf "$CONF_FILE" || [ -f /lib/systemd/timesyncd.conf ] && cp /lib/systemd/timesyncd.conf "$CONF_FILE" || printf "[Time]\n" > "$CONF_FILE"; }
+  sed -i '/^#\?NTP=/d' "$CONF_FILE" || true
+  grep -q '^\[Time\]' "$CONF_FILE" || printf "\n[Time]\n" >> "$CONF_FILE"
+  sed -i "/^\[Time\]/a\\${NTP_LINE}" "$CONF_FILE" || true
+  systemctl restart systemd-timesyncd >/dev/null 2>&1 || true
+  timedatectl set-ntp true >/dev/null 2>&1 || true
+  timedatectl set-timezone Asia/Shanghai >/dev/null 2>&1 || true
+}
+
 ensure_grub_timeout_zero(){
   local GRUB_FILE="/etc/default/grub"
   [[ ! -f "$GRUB_FILE" ]] && { echo "[GRUB] 未找到 ${GRUB_FILE}，跳过。"; return 0; }
@@ -271,8 +294,8 @@ net.core.rmem_default = 262144
 net.core.wmem_default = 262144
 net.core.rmem_max = 16777216
 net.core.wmem_max = 16777216
-net.ipv4.udp_rmem_min = 65536
-net.ipv4.udp_wmem_min = 65536
+net.ipv4.udp_rmem_min = 8192
+net.ipv4.udp_wmem_min = 8192
 net.ipv4.tcp_timestamps = 1
 net.ipv4.tcp_sack = 1
 net.ipv4.tcp_fack = 1
@@ -445,8 +468,8 @@ net.core.rmem_default = 262144
 net.core.wmem_default = 262144
 net.core.rmem_max = ${TCP_WIN_MAX}
 net.core.wmem_max = ${TCP_WIN_MAX}
-net.ipv4.udp_rmem_min = 65536
-net.ipv4.udp_wmem_min = 65536
+net.ipv4.udp_rmem_min = 8192
+net.ipv4.udp_wmem_min = 8192
 net.ipv4.tcp_timestamps = 1
 net.ipv4.tcp_sack = 1
 net.ipv4.tcp_fack = 1
@@ -553,9 +576,9 @@ main_menu(){
     read -r -e -p "请选择 [0-3]: " choice || true
     choice="${choice//[[:space:]]/}"
     case "${choice:-}" in
-      1) ensure_grub_timeout_zero; clear_screen; echo "[操作] 本地 MOSDNS 虚拟机优化 ..."; install_base_limits; install_mosdns_sysctl; install_nic_tuning_service "tso off gso off gro off rx-gro-hw off lro off"; ask_reboot; break ;;
-      2) ensure_grub_timeout_zero; clear_screen; echo "[操作] 本地 SINGBOX 虚拟机优化 ..."; install_base_limits; install_singbox_sysctl; install_nic_tuning_service "tso on gso on gro on rx-gro-hw off lro off"; ask_reboot; break ;;
-      3) ensure_grub_timeout_zero; clear_screen; echo "[操作] VPS 虚拟机优化 ..."; install_vps_limits; install_vps_sysctl; install_nic_tuning_service "tso on gso on gro on rx-gro-hw off lro off"; ask_reboot; break ;;
+      1) disable_sleep; setup_time_sync; ensure_grub_timeout_zero; clear_screen; echo "[操作] 本地 MOSDNS 虚拟机优化 ..."; install_base_limits; install_mosdns_sysctl; install_nic_tuning_service "tso off gso off gro off rx-gro-hw off lro off"; ask_reboot; break ;;
+      2) disable_sleep; setup_time_sync; ensure_grub_timeout_zero; clear_screen; echo "[操作] 本地 SINGBOX 虚拟机优化 ..."; install_base_limits; install_singbox_sysctl; install_nic_tuning_service "tso on gso on gro on rx-gro-hw off lro off"; ask_reboot; break ;;
+      3) disable_sleep; setup_time_sync; ensure_grub_timeout_zero; clear_screen; echo "[操作] VPS 虚拟机优化 ..."; install_vps_limits; install_vps_sysctl; install_nic_tuning_service "tso on gso on gro on rx-gro-hw off lro off"; ask_reboot; break ;;
       0) echo "已退出。"; break ;;
       *) echo "无效选项，退出。"; exit 1 ;;
     esac
