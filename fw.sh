@@ -155,8 +155,10 @@ EOF
 EOF
   else
     cat >>"$NFT_CONF" <<EOF
-    ip saddr != @local_ipv4 icmp  type echo-request counter add @blacklist_v4 { ip  saddr timeout ${BL_ICMP_TIMEOUT} } drop comment "BL_ICMP_V4"
-    ip6 saddr != @local_ipv6 icmpv6 type echo-request counter add @blacklist_v6 { ip6 saddr timeout ${BL_ICMP_TIMEOUT} } drop comment "BL_ICMP_V6"
+    icmp type echo-request drop
+    icmpv6 type echo-request drop
+    #ip saddr != @local_ipv4 icmp  type echo-request counter add @blacklist_v4 { ip  saddr timeout ${BL_ICMP_TIMEOUT} } drop comment "BL_ICMP_V4"
+    #ip6 saddr != @local_ipv6 icmpv6 type echo-request counter add @blacklist_v6 { ip6 saddr timeout ${BL_ICMP_TIMEOUT} } drop comment "BL_ICMP_V6"
 EOF
   fi
   cat >>"$NFT_CONF" <<'EOF'
@@ -360,8 +362,10 @@ if [[ "\$ALLOW_PING" == "yes" ]]; then
 EOF2
 else
   cat >>"\$tmp" <<EOF2
-    ip saddr != @local_ipv4 icmp  type echo-request add @blacklist_v4 { ip  saddr timeout ${BL_ICMP_TIMEOUT} } drop
-    ip6 saddr != @local_ipv6 icmpv6 type echo-request add @blacklist_v6 { ip6 saddr timeout ${BL_ICMP_TIMEOUT} } drop
+    icmp type echo-request drop
+    icmpv6 type echo-request drop
+    #ip saddr != @local_ipv4 icmp  type echo-request add @blacklist_v4 { ip  saddr timeout ${BL_ICMP_TIMEOUT} } drop
+    #ip6 saddr != @local_ipv6 icmpv6 type echo-request add @blacklist_v6 { ip6 saddr timeout ${BL_ICMP_TIMEOUT} } drop
 EOF2
 fi
 cat >>"\$tmp" <<'EOF2'
