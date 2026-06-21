@@ -118,6 +118,8 @@ set local_ipv6 {
 }
 
 chain redirect-proxy {
+    ip daddr @fake_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
+    ip6 daddr @fake_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
@@ -135,7 +137,6 @@ chain redirect-prerouting {
 chain redirect-output {
     type nat hook output priority dstnat; policy accept;
     meta l4proto != tcp return
-    fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @fake_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip6 daddr @fake_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
 }
@@ -147,11 +148,12 @@ chain tproxy-proxy {
     ip daddr @china_dns_ipv4 return
     ip6 daddr @china_dns_ipv6 return
     udp dport {123} return
-    ip protocol udp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip6 nexthdr udp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    meta l4proto udp meta mark set 1 tproxy to :$TPROXY_PORT accept
 }
 
 chain tproxy-mark {
+    ip daddr @fake_ipv4 meta mark set 1 return
+    ip6 daddr @fake_ipv6 meta mark set 1 return
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
@@ -159,23 +161,20 @@ chain tproxy-mark {
     ip6 daddr @china_dns_ipv6 return
     udp dport {123} return
     meta mark set 1
-    meta l4proto udp ct mark set 1  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
 }
 
 chain tproxy-prerouting {
     type filter hook prerouting priority mangle; policy accept;
     meta l4proto != udp return
     ct direction reply return
-    ct direction original ct mark 1 meta mark set 1 return
     ct direction original goto tproxy-proxy
 }
 
 chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != udp return
-    meta skgid $SINGBOX_GID return  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
+    meta skgid $SINGBOX_GID return
     ct direction reply return
-    ct direction original ct mark 1 meta mark set 1 return
     ct direction original goto tproxy-mark
 }
 }
@@ -231,13 +230,12 @@ chain tproxy-proxy {
     ip daddr @china_dns_ipv4 return
     ip6 daddr @china_dns_ipv6 return
     udp dport {123} return
-    ip protocol tcp meta mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip6 nexthdr tcp meta mark set 1 tproxy ip6 to :$TPROXY_PORT accept
-    ip protocol udp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
-    ip6 nexthdr udp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    meta l4proto { tcp, udp } meta mark set 1 tproxy to :$TPROXY_PORT accept
 }
 
 chain tproxy-mark {
+    ip daddr @fake_ipv4 meta mark set 1 return
+    ip6 daddr @fake_ipv6 meta mark set 1 return
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
@@ -245,25 +243,21 @@ chain tproxy-mark {
     ip6 daddr @china_dns_ipv6 return
     udp dport {123} return
     meta mark set 1
-    meta l4proto udp ct mark set 1  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
 }
 
 chain tproxy-prerouting {
     type filter hook prerouting priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
     ct direction reply return
-    meta l4proto udp ct direction original ct mark 1 meta mark set 1 return
     ct direction original goto tproxy-proxy
 }
 
 chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
-    meta skgid $SINGBOX_GID return  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
+    meta skgid $SINGBOX_GID return
     ct direction reply return
-    meta l4proto udp ct direction original ct mark 1 meta mark set 1 return
-    meta l4proto tcp ct state new ct direction original goto tproxy-mark
-    meta l4proto udp ct direction original goto tproxy-mark
+    ct direction original goto tproxy-mark
 }
 }
 EOF
@@ -331,11 +325,11 @@ set local_ipv6 {
 }
 
 chain redirect-proxy {
+    ip daddr @fake_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
+    ip6 daddr @fake_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
-    ip daddr @fake_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
-    ip6 daddr @fake_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip daddr @telegram_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip6 daddr @telegram_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip daddr @remote_dns_ipv4 tcp dport 53 redirect to :$REDIRECT_PORT
@@ -351,11 +345,11 @@ chain redirect-prerouting {
 chain redirect-output {
     type nat hook output priority dstnat; policy accept;
     meta l4proto != tcp return
+    ip daddr @fake_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
+    ip6 daddr @fake_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
     fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @local_ipv4 return
     ip6 daddr @local_ipv6 return
-    ip daddr @fake_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
-    ip6 daddr @fake_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip daddr @telegram_ipv4 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip6 daddr @telegram_ipv6 meta l4proto tcp redirect to :$REDIRECT_PORT
     ip daddr @remote_dns_ipv4 tcp dport 53 redirect to :$REDIRECT_PORT
@@ -378,14 +372,13 @@ chain tproxy-prerouting {
     type filter hook prerouting priority mangle; policy accept;
     meta l4proto != udp return
     ct direction reply return
-    ct direction original ct mark 1 meta mark set 1 return
     ct direction original goto tproxy-proxy
 }
 
 chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != udp return
-    meta skgid $SINGBOX_GID return  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
+    meta skgid $SINGBOX_GID return
     ct direction reply return
     ct direction original ct mark 1 meta mark set 1 return
     ip protocol udp ip daddr @fake_ipv4 meta mark set 1 ct mark set 1 return
@@ -444,11 +437,11 @@ set fake_ipv6 {
 }
 
 chain tproxy-proxy {
-    fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @fake_ipv4 ip protocol tcp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
     ip daddr @fake_ipv4 ip protocol udp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
     ip6 daddr @fake_ipv6 ip6 nexthdr tcp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
     ip6 daddr @fake_ipv6 ip6 nexthdr udp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
+    fib daddr type { unspec, local, anycast, multicast } return
     ip daddr @telegram_ipv4 ip protocol tcp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
     ip daddr @telegram_ipv4 ip protocol udp meta mark set 1 ct mark set 1 tproxy ip to :$TPROXY_PORT accept
     ip6 daddr @telegram_ipv6 ip6 nexthdr tcp meta mark set 1 ct mark set 1 tproxy ip6 to :$TPROXY_PORT accept
@@ -463,14 +456,13 @@ chain tproxy-prerouting {
     type filter hook prerouting priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
     ct direction reply return
-    ct direction original ct mark 1 meta mark set 1 return
     ct direction original goto tproxy-proxy
 }
 
 chain tproxy-output {
     type route hook output priority mangle; policy accept;
     meta l4proto != { tcp, udp } return
-    meta skgid $SINGBOX_GID return  # nslookup google.com 1.1.1.1 不返回IP，请删除这一行
+    meta skgid $SINGBOX_GID return
     ct direction reply return
     ct direction original ct mark 1 meta mark set 1 return
     ip daddr @fake_ipv4 meta mark set 1 ct mark set 1 return
